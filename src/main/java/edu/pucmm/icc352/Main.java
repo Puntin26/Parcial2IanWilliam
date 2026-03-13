@@ -3,6 +3,7 @@ package edu.pucmm.icc352;
 import edu.pucmm.icc352.encapsulaciones.Evento;
 import edu.pucmm.icc352.encapsulaciones.Usuario;
 import edu.pucmm.icc352.servicios.HibernateUtil;
+import edu.pucmm.icc352.encapsulaciones.Inscripcion;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.rendering.template.JavalinThymeleaf;
@@ -24,6 +25,7 @@ public class Main {
 
         // 2. CREAR ADMIN SI NO EXISTE
         crearAdminPorDefecto();
+        crearEventosPrueba();
 
         // 3. INICIAR JAVALIN
         Javalin app = Javalin.create(config -> {
@@ -60,11 +62,62 @@ public class Main {
     // Este método lo dejamos casi igual temporalmente para no romperle el JavaScript a tu compañero,
     // pero pronto lo cambiaremos para que guarde la inscripción en Hibernate.
     private static void procesarInscripcion(Context ctx) {
-        // TODO: En el próximo paso, cambiaremos esto para usar Hibernate en lugar de HashMaps.
-        ctx.json(Map.of(
-                "ok", false,
-                "mensaje", "El backend real está en construcción. ¡Pronto funcionará con la Base de Datos!"
-        ));
+        InscripcionRequest request = ctx.bodyAsClass(InscripcionRequest.class);
+
+        if (request.getNombre() == null || request.getNombre().trim().isEmpty()
+                || request.getCorreo() == null || request.getCorreo().trim().isEmpty()
+                || request.getEventoId() == null) {
+
+            ctx.json(Map.of(
+                    "ok", false,
+                    "mensaje", "Todos los campos son obligatorios"
+            ));
+            return;
+        }
+
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            session.beginTransaction();
+
+            Evento evento = session.get(Evento.class, Long.valueOf(request.getEventoId()));
+
+            if (evento == null) {
+                ctx.json(Map.of(
+                        "ok", false,
+                        "mensaje", "El evento no existe"
+                ));
+                return;
+            }
+
+            String token = "QR-" + System.currentTimeMillis();
+
+            Inscripcion inscripcion = new Inscripcion(
+                    evento,
+                    request.getNombre().trim(),
+                    request.getCorreo().trim().toLowerCase(),
+                    token
+            );
+
+            session.persist(inscripcion);
+
+            evento.setInscritos(evento.getInscritos() + 1);
+            session.merge(evento);
+
+            session.getTransaction().commit();
+
+            ctx.json(Map.of(
+                    "ok", true,
+                    "mensaje", "Inscripción realizada correctamente",
+                    "eventoId", evento.getId(),
+                    "correo", inscripcion.getCorreo(),
+                    "token", inscripcion.getTokenQr()
+            ));
+
+        } catch (Exception e) {
+            ctx.json(Map.of(
+                    "ok", false,
+                    "mensaje", "Error guardando la inscripción: " + e.getMessage()
+            ));
+        }
     }
 
     private static void crearAdminPorDefecto() {
@@ -80,6 +133,50 @@ public class Main {
             session.getTransaction().commit();
         } catch (Exception e) {
             System.err.println("Error en BD: " + e.getMessage());
+        }
+    }
+
+    private static void crearEventosPrueba() {
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            session.beginTransaction();
+
+            Long totalEventos = session.createQuery("SELECT COUNT(e) FROM Evento e", Long.class).uniqueResult();
+
+            if (totalEventos == 0) {
+                Evento e1 = new Evento();
+                e1.setTitulo("Charla de Java Web");
+                e1.setDescripcion("Introducción a Javalin y Thymeleaf");
+                e1.setFecha("2026-03-20");
+                e1.setLugar("Auditorio 1");
+                e1.setCupoMaximo(50);
+                e1.setInscritos(20);
+
+                Evento e2 = new Evento();
+                e2.setTitulo("Taller de Docker");
+                e2.setDescripcion("Contenedores y despliegue básico");
+                e2.setFecha("2026-03-22");
+                e2.setLugar("Laboratorio 3");
+                e2.setCupoMaximo(30);
+                e2.setInscritos(30);
+
+                Evento e3 = new Evento();
+                e3.setTitulo("Conferencia de IA");
+                e3.setDescripcion("Aplicaciones prácticas de inteligencia artificial");
+                e3.setFecha("2026-03-25");
+                e3.setLugar("Salón A-12");
+                e3.setCupoMaximo(100);
+                e3.setInscritos(65);
+
+                session.persist(e1);
+                session.persist(e2);
+                session.persist(e3);
+
+                System.out.println("✅ Eventos de prueba creados automáticamente.");
+            }
+
+            session.getTransaction().commit();
+        } catch (Exception e) {
+            System.err.println("Error creando eventos de prueba: " + e.getMessage());
         }
     }
 }

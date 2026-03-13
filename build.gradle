@@ -17,12 +17,10 @@ dependencies {
     // Javalin 7.0.1
     implementation 'io.javalin:javalin:7.0.1'
 
-    // ¡ESTA ES LA QUE YO TE HICE QUITAR Y DEBEMOS DEVOLVER!
-    implementation 'io.javalin:javalin-rendering-thymeleaf:7.0.1'
+    // Renderizado para Javalin 7 (¡Aquí estaba el error!)
+    implementation 'io.javalin:javalin-rendering:7.0.1'
+    implementation 'org.thymeleaf:thymeleaf:3.1.2.RELEASE' // (Te sugiero subir a la 3.1.2 que es más estable, pero la 3.1.1 funciona)
 
-    // (Opcional pero recomendado: mantén la versión de thymeleaf que ya tenías)
-    implementation 'org.thymeleaf:thymeleaf:3.1.1.RELEASE'
-    
     implementation 'org.slf4j:slf4j-simple:2.0.10'
 
     testImplementation platform('org.junit:junit-bom:5.10.0')

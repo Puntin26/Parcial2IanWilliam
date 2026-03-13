@@ -20,6 +20,7 @@ public class Evento {
     private String lugar;
     private int cupoMaximo;
     private boolean publicado;
+    private int inscritos;
 
     public Evento() {}
 
@@ -30,6 +31,7 @@ public class Evento {
         this.lugar = lugar;
         this.cupoMaximo = cupoMaximo;
         this.publicado = false;
+        this.inscritos = 0;
     }
 
     // Getters y Setters
@@ -46,5 +48,7 @@ public class Evento {
     public int getCupoMaximo() { return cupoMaximo; }
     public void setCupoMaximo(int cupoMaximo) { this.cupoMaximo = cupoMaximo; }
     public boolean isPublicado() { return publicado; }
-    public void setPublicado(boolean publicado) { this.publicado = publicado; }
+    public void setPublicado(boolean publicado) { this.publicado = publicado;}
+    public int getInscritos() { return inscritos; }
+    public void setInscritos(int inscritos) { this.inscritos = inscritos; }
 }
