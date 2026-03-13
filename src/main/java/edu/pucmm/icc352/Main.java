@@ -111,6 +111,23 @@ public class Main {
             });
 
             // ==========================================
+            // RUTA PARA EL ESCÁNER QR (Solo Admin y Organizador)
+            // ==========================================
+            config.routes.get("/escanear", ctx -> {
+                Usuario usuario = ctx.sessionAttribute("usuarioActual");
+
+                // Si no está logueado o es un simple participante, lo pateamos a la lista
+                if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
+                    ctx.redirect("/eventos");
+                    return;
+                }
+
+                Map<String, Object> modelo = new HashMap<>();
+                modelo.put("usuario", usuario);
+                ctx.render("templates/escanear.html", modelo);
+            });
+
+            // ==========================================
             // CRUD DE EVENTOS (Solo Admin y Organizador)
             // ==========================================
             config.routes.post("/admin/eventos/crear", ctx -> {
