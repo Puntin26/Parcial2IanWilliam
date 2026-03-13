@@ -29,17 +29,24 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     const botones = document.querySelectorAll(".btn-inscribirse");
-    const modalElement = document.getElementById("modalInscripcion");
+    const modalInscripcionElement = document.getElementById("modalInscripcion");
+    const modalQrElement = document.getElementById("modalQr");
+
     const eventoTitulo = document.getElementById("eventoSeleccionado");
     const form = document.getElementById("formInscripcion");
     const errorMensaje = document.getElementById("errorMensaje");
 
-    if (!modalElement || !eventoTitulo || !form || !errorMensaje) {
-        console.error("Faltan elementos del modal en el HTML");
+    const contenedorQr = document.getElementById("contenedorQr");
+    const textoQr = document.getElementById("textoQr");
+
+    if (!modalInscripcionElement || !eventoTitulo || !form || !errorMensaje) {
+        console.error("Faltan elementos del modal de inscripción");
         return;
     }
 
-    const modal = new bootstrap.Modal(modalElement);
+    const modalInscripcion = new bootstrap.Modal(modalInscripcionElement);
+    const modalQr = modalQrElement ? new bootstrap.Modal(modalQrElement) : null;
+
     let eventoActual = null;
 
     botones.forEach(btn => {
@@ -47,14 +54,14 @@ document.addEventListener("DOMContentLoaded", () => {
             eventoActual = {
                 id: parseInt(btn.dataset.id),
                 titulo: btn.dataset.titulo,
-                cupo: parseInt(btn.dataset.cupo),
-                inscritos: parseInt(btn.dataset.inscritos)
+                cupo: parseInt(btn.dataset.cupo || "0"),
+                inscritos: parseInt(btn.dataset.inscritos || "0")
             };
 
             eventoTitulo.innerText = eventoActual.titulo;
             errorMensaje.innerText = "";
             form.reset();
-            modal.show();
+            modalInscripcion.show();
         });
     });
 
@@ -94,42 +101,35 @@ document.addEventListener("DOMContentLoaded", () => {
                 return;
             }
 
-            actualizarVistaEvento(data.eventoId, data.inscritos, data.cupoMaximo);
-
             alert(data.mensaje);
-            modal.hide();
+            modalInscripcion.hide();
+
+            mostrarQr(data.eventoId, data.correo, data.token);
+
         } catch (error) {
             console.error(error);
             errorMensaje.innerText = "Ocurrió un error al procesar la inscripción";
         }
     });
 
-    function actualizarVistaEvento(eventoId, inscritos, cupoMaximo) {
-        const spanCard = document.getElementById(`inscritos-card-${eventoId}`);
-        const spanTabla = document.getElementById(`inscritos-tabla-${eventoId}`);
-        const btnCard = document.getElementById(`btn-card-${eventoId}`);
-        const btnTabla = document.getElementById(`btn-tabla-${eventoId}`);
+    function mostrarQr(eventoId, correo, token) {
+        if (!contenedorQr || !textoQr || !modalQr) return;
 
-        if (spanCard) spanCard.innerText = inscritos;
-        if (spanTabla) spanTabla.innerText = inscritos;
+        const contenidoQr = JSON.stringify({
+            eventoId: eventoId,
+            correo: correo,
+            token: token
+        });
 
-        if (btnCard) btnCard.dataset.inscritos = inscritos;
-        if (btnTabla) btnTabla.dataset.inscritos = inscritos;
+        contenedorQr.innerHTML = "";
+        textoQr.innerText = contenidoQr;
 
-        if (inscritos >= cupoMaximo) {
-            if (btnCard) {
-                btnCard.disabled = true;
-                btnCard.innerText = "Cupo lleno";
-                btnCard.classList.remove("btn-success");
-                btnCard.classList.add("btn-secondary");
-            }
+        new QRCode(contenedorQr, {
+            text: contenidoQr,
+            width: 220,
+            height: 220
+        });
 
-            if (btnTabla) {
-                btnTabla.disabled = true;
-                btnTabla.innerText = "Cupo lleno";
-                btnTabla.classList.remove("btn-success");
-                btnTabla.classList.add("btn-secondary");
-            }
-        }
+        modalQr.show();
     }
 });
