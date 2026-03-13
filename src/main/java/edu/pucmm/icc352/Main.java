@@ -3,6 +3,7 @@ package edu.pucmm.icc352;
 import edu.pucmm.icc352.encapsulaciones.Evento;
 import edu.pucmm.icc352.encapsulaciones.Usuario;
 import edu.pucmm.icc352.servicios.HibernateUtil;
+import edu.pucmm.icc352.encapsulaciones.Inscripcion;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import io.javalin.rendering.template.JavalinThymeleaf;
@@ -74,15 +75,49 @@ public class Main {
             return;
         }
 
-        String token = "TEMP-" + System.currentTimeMillis();
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            session.beginTransaction();
 
-        ctx.json(Map.of(
-                "ok", true,
-                "mensaje", "Inscripción realizada correctamente",
-                "eventoId", request.getEventoId(),
-                "correo", request.getCorreo(),
-                "token", token
-        ));
+            Evento evento = session.get(Evento.class, Long.valueOf(request.getEventoId()));
+
+            if (evento == null) {
+                ctx.json(Map.of(
+                        "ok", false,
+                        "mensaje", "El evento no existe"
+                ));
+                return;
+            }
+
+            String token = "QR-" + System.currentTimeMillis();
+
+            Inscripcion inscripcion = new Inscripcion(
+                    evento,
+                    request.getNombre().trim(),
+                    request.getCorreo().trim().toLowerCase(),
+                    token
+            );
+
+            session.persist(inscripcion);
+
+            evento.setInscritos(evento.getInscritos() + 1);
+            session.merge(evento);
+
+            session.getTransaction().commit();
+
+            ctx.json(Map.of(
+                    "ok", true,
+                    "mensaje", "Inscripción realizada correctamente",
+                    "eventoId", evento.getId(),
+                    "correo", inscripcion.getCorreo(),
+                    "token", inscripcion.getTokenQr()
+            ));
+
+        } catch (Exception e) {
+            ctx.json(Map.of(
+                    "ok", false,
+                    "mensaje", "Error guardando la inscripción: " + e.getMessage()
+            ));
+        }
     }
 
     private static void crearAdminPorDefecto() {
