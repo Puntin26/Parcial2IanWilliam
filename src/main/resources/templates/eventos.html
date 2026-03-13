@@ -35,11 +35,15 @@
             <li><strong>Fecha:</strong> <span th:text="${evento.fecha}"></span></li>
             <li><strong>Lugar:</strong> <span th:text="${evento.lugar}"></span></li>
             <li><strong>Cupo máximo:</strong> <span th:text="${evento.cupoMaximo}"></span></li>
-            <li><strong>Inscritos:</strong> <span th:text="${evento.inscritos}"></span></li>
+            <li>
+              <strong>Inscritos:</strong>
+              <span th:id="'inscritos-card-' + ${evento.id}" th:text="${evento.inscritos}"></span>
+            </li>
           </ul>
 
           <button
                   class="btn btn-success w-100 btn-inscribirse"
+                  th:id="'btn-card-' + ${evento.id}"
                   th:attr="data-id=${evento.id},data-titulo=${evento.titulo},data-cupo=${evento.cupoMaximo},data-inscritos=${evento.inscritos}">
                   Inscribirse
           </button>
@@ -70,10 +74,13 @@
           <td th:text="${evento.fecha}">Fecha</td>
           <td th:text="${evento.lugar}">Lugar</td>
           <td th:text="${evento.cupoMaximo}">50</td>
-          <td th:text="${evento.inscritos}">20</td>
+          <td>
+            <span th:id="'inscritos-tabla-' + ${evento.id}" th:text="${evento.inscritos}">20</span>
+          </td>
           <td>
           <button
                   class="btn btn-success btn-sm btn-inscribirse"
+                  th:id="'btn-tabla-' + ${evento.id}"
                   th:attr="data-id=${evento.id},data-titulo=${evento.titulo},data-cupo=${evento.cupoMaximo},data-inscritos=${evento.inscritos}">
                   Inscribirse
           </button>
