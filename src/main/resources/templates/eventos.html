@@ -10,6 +10,29 @@
 </head>
 <body>
 
+<nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="/eventos">🎓 Sistema de Eventos PUCMM</a>
+    <div class="d-flex align-items-center">
+      <#if usuario??>
+      <span class="navbar-text text-white me-3 d-none d-md-inline">Hola, ${usuario.correo}</span>
+
+      <#if usuario.rol == 'ADMINISTRADOR'>
+      <a href="/admin/usuarios" class="btn btn-warning btn-sm me-2">Panel Admin</a>
+    </#if>
+
+    <#if usuario.rol == 'ADMINISTRADOR' || usuario.rol == 'ORGANIZADOR'>
+    <button class="btn btn-success btn-sm me-2" data-bs-toggle="modal" data-bs-target="#modalCrearEvento">Crear Evento</button>
+  </#if>
+
+  <a href="/logout" class="btn btn-outline-light btn-sm">Cerrar Sesión</a>
+  <#else>
+  <a href="/login" class="btn btn-primary btn-sm">Iniciar Sesión</a>
+</#if>
+</div>
+</div>
+</nav>
+
 <div class="container py-4">
   <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
     <div>
@@ -23,7 +46,6 @@
     </div>
   </div>
 
-  <!-- VISTA TARJETAS -->
   <div id="vistaCards" class="row g-4">
     <#list eventos as evento>
     <div class="col-md-6 col-lg-4">
@@ -49,41 +71,40 @@
                   data-titulo="${evento.titulo}"
                   data-cupo="${evento.cupoMaximo}"
                   data-inscritos="${evento.inscritos}">
-                  Inscribirse
+            Inscribirse
           </button>
         </div>
       </div>
     </div>
-    </#list>
-  </div>
+  </#list>
+</div>
 
-  <!-- VISTA TABLA -->
-  <div id="vistaTabla" class="d-none">
-    <div class="table-responsive">
-      <table class="table table-striped table-hover align-middle">
-        <thead class="table-dark">
-        <tr>
-          <th>ID</th>
-          <th>Título</th>
-          <th>Fecha</th>
-          <th>Lugar</th>
-          <th>Cupo máximo</th>
-          <th>Inscritos</th>
-          <th>Acción</th>
-        </tr>
-        </thead>
-        <tbody>
-        <#list eventos as evento>
-        <tr>
-          <td>${evento.id}</td>
-          <td>${evento.titulo}</td>
-          <td>${evento.fecha}</td>
-          <td>${evento.lugar}</td>
-          <td>${evento.cupoMaximo}</td>
-          <td>
-            <span id="inscritos-tabla-${evento.id}">${evento.inscritos}</span>
-          </td>
-          <td>
+<div id="vistaTabla" class="d-none">
+  <div class="table-responsive">
+    <table class="table table-striped table-hover align-middle">
+      <thead class="table-dark">
+      <tr>
+        <th>ID</th>
+        <th>Título</th>
+        <th>Fecha</th>
+        <th>Lugar</th>
+        <th>Cupo máximo</th>
+        <th>Inscritos</th>
+        <th>Acción</th>
+      </tr>
+      </thead>
+      <tbody>
+      <#list eventos as evento>
+      <tr>
+        <td>${evento.id}</td>
+        <td>${evento.titulo}</td>
+        <td>${evento.fecha}</td>
+        <td>${evento.lugar}</td>
+        <td>${evento.cupoMaximo}</td>
+        <td>
+          <span id="inscritos-tabla-${evento.id}">${evento.inscritos}</span>
+        </td>
+        <td>
           <button
                   class="btn btn-success btn-sm btn-inscribirse"
                   id="btn-tabla-${evento.id}"
@@ -91,16 +112,17 @@
                   data-titulo="${evento.titulo}"
                   data-cupo="${evento.cupoMaximo}"
                   data-inscritos="${evento.inscritos}">
-                  Inscribirse
+            Inscribirse
           </button>
-          </td>
-        </tr>
-        </#list>
-        </tbody>
-      </table>
-    </div>
+        </td>
+      </tr>
+      </#list>
+      </tbody>
+    </table>
   </div>
 </div>
+</div>
+
 <div class="modal fade" id="modalInscripcion" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -111,29 +133,21 @@
       </div>
 
       <div class="modal-body">
-
         <h6 id="eventoSeleccionado"></h6>
-
         <form id="formInscripcion">
-
           <div class="mb-3">
             <label class="form-label">Nombre</label>
             <input type="text" class="form-control" id="nombre" required>
           </div>
-
           <div class="mb-3">
             <label class="form-label">Correo</label>
             <input type="email" class="form-control" id="correo" required>
           </div>
-
           <div id="errorMensaje" class="text-danger small"></div>
-
           <button type="submit" class="btn btn-success w-100">
             Confirmar inscripción
           </button>
-
         </form>
-
       </div>
 
     </div>
@@ -151,9 +165,7 @@
 
       <div class="modal-body text-center">
         <p class="mb-3">Guarda este QR para el día del evento.</p>
-
         <div id="contenedorQr" class="d-flex justify-content-center mb-3"></div>
-
         <div class="small text-muted" id="textoQr"></div>
       </div>
 
@@ -161,6 +173,46 @@
   </div>
 </div>
 
+<#if usuario?? && (usuario.rol == 'ADMINISTRADOR' || usuario.rol == 'ORGANIZADOR')>
+<div class="modal fade" id="modalCrearEvento" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title">Crear Nuevo Evento</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <form method="POST" action="/admin/eventos/crear">
+          <div class="mb-3">
+            <label class="form-label">Título del Evento</label>
+            <input type="text" class="form-control" name="titulo" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Descripción</label>
+            <textarea class="form-control" name="descripcion" rows="3" required></textarea>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Fecha</label>
+            <input type="date" class="form-control" name="fecha" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Lugar</label>
+            <input type="text" class="form-control" name="lugar" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Cupo Máximo</label>
+            <input type="number" class="form-control" name="cupoMaximo" min="1" required>
+          </div>
+          <button type="submit" class="btn btn-success w-100">Guardar Evento</button>
+        </form>
+      </div>
+
+    </div>
+  </div>
+</div>
+</#if>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
