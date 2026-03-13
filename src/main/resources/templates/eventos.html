@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="es" xmlns:th="http://www.thymeleaf.org">
+<html lang="es">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title th:text="${titulo}">Eventos</title>
+  <title>${titulo}</title>
 
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <link rel="stylesheet" href="/css/estilos.css">
@@ -13,7 +13,7 @@
 <div class="container py-4">
   <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
     <div>
-      <h1 class="mb-1" th:text="${titulo}">Eventos Académicos</h1>
+      <h1 class="mb-1">${titulo}</h1>
       <p class="text-muted mb-0">Consulta los eventos disponibles en formato de tarjetas o tabla.</p>
     </div>
 
@@ -25,31 +25,36 @@
 
   <!-- VISTA TARJETAS -->
   <div id="vistaCards" class="row g-4">
-    <div class="col-md-6 col-lg-4" th:each="evento : ${eventos}">
+    <#list eventos as evento>
+    <div class="col-md-6 col-lg-4">
       <div class="card h-100 sombra-suave">
         <div class="card-body">
-          <h5 class="card-title" th:text="${evento.titulo}">Título</h5>
-          <p class="card-text text-muted" th:text="${evento.descripcion}">Descripción</p>
+          <h5 class="card-title">${evento.titulo}</h5>
+          <p class="card-text text-muted">${evento.descripcion}</p>
 
           <ul class="list-unstyled small mb-3">
-            <li><strong>Fecha:</strong> <span th:text="${evento.fecha}"></span></li>
-            <li><strong>Lugar:</strong> <span th:text="${evento.lugar}"></span></li>
-            <li><strong>Cupo máximo:</strong> <span th:text="${evento.cupoMaximo}"></span></li>
+            <li><strong>Fecha:</strong> <span>${evento.fecha}</span></li>
+            <li><strong>Lugar:</strong> <span>${evento.lugar}</span></li>
+            <li><strong>Cupo máximo:</strong> <span>${evento.cupoMaximo}</span></li>
             <li>
               <strong>Inscritos:</strong>
-              <span th:id="'inscritos-card-' + ${evento.id}" th:text="${evento.inscritos}"></span>
+              <span id="inscritos-card-${evento.id}">${evento.inscritos}</span>
             </li>
           </ul>
 
           <button
                   class="btn btn-success w-100 btn-inscribirse"
-                  th:id="'btn-card-' + ${evento.id}"
-                  th:attr="data-id=${evento.id},data-titulo=${evento.titulo},data-cupo=${evento.cupoMaximo},data-inscritos=${evento.inscritos}">
+                  id="btn-card-${evento.id}"
+                  data-id="${evento.id}"
+                  data-titulo="${evento.titulo}"
+                  data-cupo="${evento.cupoMaximo}"
+                  data-inscritos="${evento.inscritos}">
                   Inscribirse
           </button>
         </div>
       </div>
     </div>
+    </#list>
   </div>
 
   <!-- VISTA TABLA -->
@@ -68,24 +73,29 @@
         </tr>
         </thead>
         <tbody>
-        <tr th:each="evento : ${eventos}">
-          <td th:text="${evento.id}">1</td>
-          <td th:text="${evento.titulo}">Título</td>
-          <td th:text="${evento.fecha}">Fecha</td>
-          <td th:text="${evento.lugar}">Lugar</td>
-          <td th:text="${evento.cupoMaximo}">50</td>
+        <#list eventos as evento>
+        <tr>
+          <td>${evento.id}</td>
+          <td>${evento.titulo}</td>
+          <td>${evento.fecha}</td>
+          <td>${evento.lugar}</td>
+          <td>${evento.cupoMaximo}</td>
           <td>
-            <span th:id="'inscritos-tabla-' + ${evento.id}" th:text="${evento.inscritos}">20</span>
+            <span id="inscritos-tabla-${evento.id}">${evento.inscritos}</span>
           </td>
           <td>
           <button
                   class="btn btn-success btn-sm btn-inscribirse"
-                  th:id="'btn-tabla-' + ${evento.id}"
-                  th:attr="data-id=${evento.id},data-titulo=${evento.titulo},data-cupo=${evento.cupoMaximo},data-inscritos=${evento.inscritos}">
+                  id="btn-tabla-${evento.id}"
+                  data-id="${evento.id}"
+                  data-titulo="${evento.titulo}"
+                  data-cupo="${evento.cupoMaximo}"
+                  data-inscritos="${evento.inscritos}">
                   Inscribirse
           </button>
           </td>
         </tr>
+        </#list>
         </tbody>
       </table>
     </div>

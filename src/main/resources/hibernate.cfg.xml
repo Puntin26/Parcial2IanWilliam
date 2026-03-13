@@ -20,5 +20,6 @@
         <mapping class="edu.pucmm.icc352.encapsulaciones.Evento"/>
         <mapping class="edu.pucmm.icc352.encapsulaciones.Inscripcion"/>
 
+
     </session-factory>
 </hibernate-configuration>

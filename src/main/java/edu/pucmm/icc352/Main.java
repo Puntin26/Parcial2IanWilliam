@@ -6,10 +6,13 @@ import edu.pucmm.icc352.servicios.HibernateUtil;
 import edu.pucmm.icc352.encapsulaciones.Inscripcion;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
-import io.javalin.rendering.template.JavalinThymeleaf;
 import org.h2.tools.Server;
 import org.hibernate.Session;
+import freemarker.template.Configuration;
+import freemarker.template.Template;
 
+import java.io.File;
+import java.io.StringWriter;
 import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.List;
@@ -19,48 +22,112 @@ public class Main {
 
     public static void main(String[] args) throws SQLException {
 
-        // 1. INICIAR H2 EN MODO SERVIDOR TCP (TU REQUERIMIENTO)
+        // 1. INICIAR H2 EN MODO SERVIDOR TCP
         Server.createTcpServer("-tcp", "-tcpAllowOthers", "-tcpPort", "9092").start();
         System.out.println("✅ Servidor H2 iniciado en modo TCP en el puerto 9092");
 
-        // 2. CREAR ADMIN SI NO EXISTE
+        // 2. CREAR ADMIN Y EVENTOS SI NO EXISTEN
         crearAdminPorDefecto();
         crearEventosPrueba();
 
         // 3. INICIAR JAVALIN
         Javalin app = Javalin.create(config -> {
             config.staticFiles.add("/public");
-            config.fileRenderer(new JavalinThymeleaf());
+            
+            // Configurar Freemarker para renderizar templates
+            Configuration fmConfig = new Configuration(Configuration.VERSION_2_3_32);
+            try {
+                fmConfig.setDirectoryForTemplateLoading(new File("src/main/resources"));
+            } catch (Exception e) {
+                System.err.println("Error configurando Freemarker: " + e.getMessage());
+            }
+            
+            config.fileRenderer((filePath, model, _) -> {
+                try {
+                    Template template = fmConfig.getTemplate(filePath);
+                    StringWriter out = new StringWriter();
+                    template.process(model, out);
+                    return out.toString();
+                } catch (Exception e) {
+                    return "Error renderizando template: " + e.getMessage();
+                }
+            });
 
             // Redirección inicial
             config.routes.get("/", ctx -> ctx.redirect("/eventos"));
 
             // ==========================================
-            // RUTA MODIFICADA: AHORA LEE DE LA BASE DE DATOS
+            // RUTAS DE LOGIN Y SESIÓN
+            // ==========================================
+
+            // Mostrar formulario de login
+            config.routes.get("/login", ctx -> {
+                ctx.render("templates/login.html");
+            });
+
+            // Procesar las credenciales
+            config.routes.post("/login", ctx -> {
+                String correo = ctx.formParam("correo");
+                String password = ctx.formParam("password");
+
+                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+                    Usuario usuario = session.createQuery("FROM Usuario WHERE correo = :correo", Usuario.class)
+                            .setParameter("correo", correo)
+                            .uniqueResult();
+
+                    // Validar si el usuario existe y la contraseña coincide
+                    if (usuario != null && usuario.getPassword().equals(password)) {
+                        if (usuario.isBloqueado()) {
+                            ctx.status(403).result("Usuario bloqueado. Contacte al administrador.");
+                        } else {
+                            // Iniciar sesión guardando el usuario en el Context
+                            ctx.sessionAttribute("usuarioActual", usuario);
+                            ctx.redirect("/eventos");
+                        }
+                    } else {
+                        // Credenciales incorrectas
+                        ctx.status(401).result("Credenciales incorrectas");
+                    }
+                } catch (Exception e) {
+                    ctx.status(500).result("Error en el servidor: " + e.getMessage());
+                }
+            });
+
+            // Cerrar sesión
+            config.routes.get("/logout", ctx -> {
+                ctx.req().getSession().invalidate(); // Destruye la sesión
+                ctx.redirect("/");
+            });
+
+
+            // ==========================================
+            // RUTAS DE EVENTOS
             // ==========================================
             config.routes.get("/eventos", ctx -> {
+                // Obtener el usuario de la sesión actual (si existe)
+                Usuario usuarioSesion = ctx.sessionAttribute("usuarioActual");
+
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-                    // Magia de Hibernate: Traer todos los eventos reales
                     List<Evento> eventosReales = session.createQuery("FROM Evento", Evento.class).list();
 
                     Map<String, Object> modelo = new HashMap<>();
                     modelo.put("titulo", "Eventos Académicos");
                     modelo.put("eventos", eventosReales);
+                    // Pasamos el usuario al HTML para que Thymeleaf pueda verificar su rol
+                    modelo.put("usuario", usuarioSesion);
 
                     ctx.render("templates/eventos.html", modelo);
                 }
             });
 
             // ==========================================
-            // RUTA DE INSCRIPCIÓN (Pendiente de conectar a BD)
+            // RUTA DE INSCRIPCIÓN (API)
             // ==========================================
             config.routes.post("/api/inscripciones", Main::procesarInscripcion);
 
         }).start(7000);
     }
 
-    // Este método lo dejamos casi igual temporalmente para no romperle el JavaScript a tu compañero,
-    // pero pronto lo cambiaremos para que guarde la inscripción en Hibernate.
     private static void procesarInscripcion(Context ctx) {
         InscripcionRequest request = ctx.bodyAsClass(InscripcionRequest.class);
 
