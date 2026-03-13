@@ -28,6 +28,18 @@ dependencies {
     implementation 'org.thymeleaf:thymeleaf:3.1.1.RELEASE'
     implementation 'org.apache.velocity:velocity-engine-core:2.3'
     implementation("io.javalin:javalin-rendering:6.1.3")
+
+    // ORM (Hibernate) y API de Persistencia (JPA)
+    implementation 'org.hibernate.orm:hibernate-core:6.4.4.Final'
+
+    // Base de datos local H2
+    implementation 'com.h2database:h2:2.2.224'
+
+    // Para encriptar las cookies
+    implementation 'org.jasypt:jasypt:1.9.3'
+
+    // Driver para conectar a la nube CockroachDB
+    implementation 'org.postgresql:postgresql:42.7.2'
 }
 
 application {
