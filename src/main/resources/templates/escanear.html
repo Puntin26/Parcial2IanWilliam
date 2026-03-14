@@ -13,7 +13,7 @@
     <div class="container-fluid">
         <a class="navbar-brand" href="/eventos">🎓 Sistema de Eventos PUCMM</a>
         <div class="d-flex align-items-center">
-            <span class="navbar-text text-white me-3">Hola, ${usuario.correo}</span>
+            <span class="navbar-text text-white me-3">Hola, ${usuario.username!usuario.correo}</span>
             <a href="/eventos" class="btn btn-outline-light btn-sm">Volver a Eventos</a>
         </div>
     </div>
@@ -27,7 +27,6 @@
 
             <div class="card sombra-suave p-4">
                 <div id="lector-qr" class="mx-auto" style="width: 100%; max-width: 500px;"></div>
-
                 <div id="resultado" class="mt-4 fw-bold fs-5"></div>
             </div>
         </div>
@@ -37,14 +36,11 @@
 <script src="https://unpkg.com/html5-qrcode"></script>
 
 <script>
-    // Esta función se dispara automáticamente cuando la cámara lee un QR
     function onScanSuccess(decodedText, decodedResult) {
         try {
-            // El QR que generó Ian es un JSON. Lo convertimos a objeto JavaScript.
             const datosQr = JSON.parse(decodedText);
             const token = datosQr.token;
 
-            // Le mandamos el token a tu API de Java
             fetch('/api/asistencia', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -54,30 +50,27 @@
                 .then(data => {
                     const resDiv = document.getElementById('resultado');
 
-                    // SOLUCIÓN: Usar concatenación con '+' en lugar de template literals
                     if (data.ok) {
                         resDiv.innerHTML = '<span class="text-success">✅ ' + data.mensaje + '</span>';
                     } else {
                         resDiv.innerHTML = '<span class="text-danger">❌ ' + data.mensaje + '</span>';
                     }
 
-                    // Limpiar el mensaje después de 4 segundos
                     setTimeout(() => { resDiv.innerHTML = ""; }, 4000);
                 });
 
         } catch (error) {
-            document.getElementById('resultado').innerHTML = '<span class="text-danger">❌ Error: Código QR no válido para este sistema.</span>';
+            document.getElementById('resultado').innerHTML =
+                '<span class="text-danger">❌ Error: Código QR no válido para este sistema.</span>';
         }
     }
 
-    // Configuración de la cámara
     let html5QrcodeScanner = new Html5QrcodeScanner(
         "lector-qr",
         { fps: 10, qrbox: { width: 250, height: 250 } },
         false
     );
 
-    // Iniciar la cámara
     html5QrcodeScanner.render(onScanSuccess);
 </script>
 

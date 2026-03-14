@@ -1,6 +1,7 @@
 package edu.pucmm.icc352.encapsulaciones;
 
 import jakarta.persistence.*;
+import java.time.LocalDateTime;
 
 @Entity
 @Table(name = "inscripciones")
@@ -26,6 +27,10 @@ public class Inscripcion {
     @Column(nullable = false)
     private boolean asistio;
 
+    private LocalDateTime fechaInscripcion;
+
+    private LocalDateTime fechaAsistencia;
+
     public Inscripcion() {
     }
 
@@ -35,6 +40,8 @@ public class Inscripcion {
         this.correo = correo;
         this.tokenQr = tokenQr;
         this.asistio = false;
+        this.fechaInscripcion = LocalDateTime.now();
+        this.fechaAsistencia = null;
     }
 
     public Long getId() {
@@ -83,5 +90,21 @@ public class Inscripcion {
 
     public void setAsistio(boolean asistio) {
         this.asistio = asistio;
+    }
+
+    public LocalDateTime getFechaInscripcion() {
+        return fechaInscripcion;
+    }
+
+    public void setFechaInscripcion(LocalDateTime fechaInscripcion) {
+        this.fechaInscripcion = fechaInscripcion;
+    }
+
+    public LocalDateTime getFechaAsistencia() {
+        return fechaAsistencia;
+    }
+
+    public void setFechaAsistencia(LocalDateTime fechaAsistencia) {
+        this.fechaAsistencia = fechaAsistencia;
     }
 }

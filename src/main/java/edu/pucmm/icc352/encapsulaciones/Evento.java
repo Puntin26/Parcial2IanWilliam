@@ -17,6 +17,7 @@ public class Evento {
     private String descripcion;
 
     private String fecha;
+    private String hora;
     private String lugar;
     private int cupoMaximo;
     private boolean publicado;
@@ -24,10 +25,11 @@ public class Evento {
 
     public Evento() {}
 
-    public Evento(String titulo, String descripcion, String fecha, String lugar, int cupoMaximo) {
+    public Evento(String titulo, String descripcion, String fecha, String hora, String lugar, int cupoMaximo) {
         this.titulo = titulo;
         this.descripcion = descripcion;
         this.fecha = fecha;
+        this.hora = hora;
         this.lugar = lugar;
         this.cupoMaximo = cupoMaximo;
         this.publicado = false;
@@ -51,4 +53,6 @@ public class Evento {
     public void setPublicado(boolean publicado) { this.publicado = publicado;}
     public int getInscritos() { return inscritos; }
     public void setInscritos(int inscritos) { this.inscritos = inscritos; }
+    public String getHora() { return hora; }
+    public void setHora(String hora) { this.hora = hora; }
 }

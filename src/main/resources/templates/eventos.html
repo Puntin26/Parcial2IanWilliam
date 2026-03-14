@@ -10,24 +10,31 @@
 </head>
 <body>
 
+<#assign esAdmin = usuario?? && usuario.rol == 'ADMINISTRADOR'>
+<#assign esGestion = usuario?? && (usuario.rol == 'ADMINISTRADOR' || usuario.rol == 'ORGANIZADOR')>
+
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark mb-4">
   <div class="container-fluid">
     <a class="navbar-brand" href="/eventos">🎓 Sistema de Eventos PUCMM</a>
-    <div class="d-flex align-items-center">
-      <#if usuario??>
-      <span class="navbar-text text-white me-3 d-none d-md-inline">Hola, ${usuario.correo}</span>
 
-      <#if usuario.rol == 'ADMINISTRADOR'>
-      <a href="/admin/usuarios" class="btn btn-warning btn-sm me-2">Panel Admin</a>
+    <div class="d-flex align-items-center gap-2 flex-wrap">
+      <#if usuario??>
+      <span class="navbar-text text-white me-2 d-none d-md-inline">
+                    Hola, ${usuario.username!usuario.correo} (${usuario.rol})
+                </span>
+
+      <#if esAdmin>
+      <a href="/admin/usuarios" class="btn btn-warning btn-sm">Panel Admin</a>
     </#if>
 
-    <#if usuario.rol == 'ADMINISTRADOR' || usuario.rol == 'ORGANIZADOR'>
-    <button class="btn btn-success btn-sm me-2" data-bs-toggle="modal" data-bs-target="#modalCrearEvento">Crear Evento</button>
+    <#if esGestion>
+    <button class="btn btn-success btn-sm" data-bs-toggle="modal" data-bs-target="#modalCrearEvento">
+      Crear Evento
+    </button>
+    <a href="/escanear" class="btn btn-info btn-sm text-white">Escanear QR</a>
   </#if>
-  <a href="/escanear" class="btn btn-info btn-sm me-2 text-white">Escanear QR</a>
+
   <a href="/logout" class="btn btn-outline-light btn-sm">Cerrar Sesión</a>
-  <#else>
-  <a href="/login" class="btn btn-primary btn-sm">Iniciar Sesión</a>
 </#if>
 </div>
 </div>
@@ -48,6 +55,8 @@
 
   <div id="vistaCards" class="row g-4">
     <#list eventos as evento>
+    <#assign yaInscrito = eventosInscritosIds?? && eventosInscritosIds?seq_contains(evento.id)>
+
     <div class="col-md-6 col-lg-4">
       <div class="card h-100 sombra-suave">
         <div class="card-body">
@@ -56,27 +65,81 @@
 
           <ul class="list-unstyled small mb-3">
             <li><strong>Fecha:</strong> <span>${evento.fecha}</span></li>
+            <li><strong>Hora:</strong> <span>${evento.hora!'No definida'}</span></li>
             <li><strong>Lugar:</strong> <span>${evento.lugar}</span></li>
             <li><strong>Cupo máximo:</strong> <span>${evento.cupoMaximo}</span></li>
+            <li><strong>Inscritos:</strong> <span id="inscritos-card-${evento.id}">${evento.inscritos}</span></li>
+            <#if esGestion>
             <li>
-              <strong>Inscritos:</strong>
-              <span id="inscritos-card-${evento.id}">${evento.inscritos}</span>
+              <strong>Estado:</strong>
+              <span class="badge ${evento.publicado?string('bg-success','bg-secondary')}">
+                                        ${evento.publicado?string('Publicado','No publicado')}
+                                    </span>
             </li>
+          </#if>
           </ul>
 
-          <button
-                  class="btn btn-success w-100 btn-inscribirse"
-                  id="btn-card-${evento.id}"
+          <div
+                  id="acciones-card-${evento.id}"
                   data-id="${evento.id}"
-                  data-titulo="${evento.titulo}"
-                  data-cupo="${evento.cupoMaximo}"
-                  data-inscritos="${evento.inscritos}">
-            Inscribirse
-          </button>
+                  data-titulo="${evento.titulo?html}"
+                  data-cupo="${evento.cupoMaximo}">
+            <#if yaInscrito>
+            <button
+                    class="btn btn-outline-danger w-100 btn-cancelar"
+                    data-id="${evento.id}"
+                    data-titulo="${evento.titulo?html}">
+              Cancelar inscripción
+            </button>
+            <#elseif evento.inscritos gte evento.cupoMaximo>
+            <button class="btn btn-secondary w-100" disabled>
+              Cupo lleno
+            </button>
+            <#else>
+            <button
+                    class="btn btn-success w-100 btn-inscribirse"
+                    data-id="${evento.id}"
+                    data-titulo="${evento.titulo?html}"
+                    data-cupo="${evento.cupoMaximo}"
+                    data-inscritos="${evento.inscritos}">
+              Inscribirse
+            </button>
+          </#if>
         </div>
+
+        <#if esGestion>
+        <div class="mt-3 d-flex flex-column gap-2">
+          <a href="/eventos/${evento.id}/resumen" class="btn btn-outline-dark btn-sm w-100">
+            Ver resumen
+          </a>
+
+          <form method="POST" action="/admin/eventos/estado/${evento.id}">
+            <input type="hidden" name="accion" value="${evento.publicado?string('DESPUBLICAR','PUBLICAR')}">
+            <button type="submit" class="btn btn-outline-primary btn-sm w-100">
+              ${evento.publicado?string('Despublicar','Publicar')}
+            </button>
+          </form>
+
+          <form method="POST" action="/admin/eventos/estado/${evento.id}">
+            <input type="hidden" name="accion" value="CANCELAR">
+            <button type="submit" class="btn btn-outline-warning btn-sm w-100">
+              Cancelar evento
+            </button>
+          </form>
+
+          <#if esAdmin>
+          <form method="POST" action="/admin/eventos/eliminar/${evento.id}">
+            <button type="submit" class="btn btn-outline-danger btn-sm w-100">
+              Eliminar evento
+            </button>
+          </form>
+        </#if>
       </div>
-    </div>
-  </#list>
+    </#if>
+  </div>
+</div>
+</div>
+</#list>
 </div>
 
 <div id="vistaTabla" class="d-none">
@@ -87,6 +150,7 @@
         <th>ID</th>
         <th>Título</th>
         <th>Fecha</th>
+        <th>Hora</th>
         <th>Lugar</th>
         <th>Cupo máximo</th>
         <th>Inscritos</th>
@@ -95,31 +159,50 @@
       </thead>
       <tbody>
       <#list eventos as evento>
+      <#assign yaInscrito = eventosInscritosIds?? && eventosInscritosIds?seq_contains(evento.id)>
+
       <tr>
         <td>${evento.id}</td>
         <td>${evento.titulo}</td>
         <td>${evento.fecha}</td>
+        <td>${evento.hora!'No definida'}</td>
         <td>${evento.lugar}</td>
         <td>${evento.cupoMaximo}</td>
+        <td><span id="inscritos-tabla-${evento.id}">${evento.inscritos}</span></td>
         <td>
-          <span id="inscritos-tabla-${evento.id}">${evento.inscritos}</span>
-        </td>
-        <td>
-          <button
-                  class="btn btn-success btn-sm btn-inscribirse"
-                  id="btn-tabla-${evento.id}"
+          <div
+                  id="acciones-tabla-${evento.id}"
                   data-id="${evento.id}"
-                  data-titulo="${evento.titulo}"
-                  data-cupo="${evento.cupoMaximo}"
-                  data-inscritos="${evento.inscritos}">
-            Inscribirse
-          </button>
-        </td>
-      </tr>
-      </#list>
-      </tbody>
-    </table>
+                  data-titulo="${evento.titulo?html}"
+                  data-cupo="${evento.cupoMaximo}">
+            <#if yaInscrito>
+            <button
+                    class="btn btn-outline-danger btn-sm btn-cancelar"
+                    data-id="${evento.id}"
+                    data-titulo="${evento.titulo?html}">
+              Cancelar
+            </button>
+            <#elseif evento.inscritos gte evento.cupoMaximo>
+            <button class="btn btn-secondary btn-sm" disabled>
+              Cupo lleno
+            </button>
+            <#else>
+            <button
+                    class="btn btn-success btn-sm btn-inscribirse"
+                    data-id="${evento.id}"
+                    data-titulo="${evento.titulo?html}"
+                    data-cupo="${evento.cupoMaximo}"
+                    data-inscritos="${evento.inscritos}">
+              Inscribirse
+            </button>
+          </#if>
   </div>
+  </td>
+  </tr>
+</#list>
+</tbody>
+</table>
+</div>
 </div>
 </div>
 
@@ -134,16 +217,15 @@
 
       <div class="modal-body">
         <h6 id="eventoSeleccionado"></h6>
+
         <form id="formInscripcion">
           <div class="mb-3">
             <label class="form-label">Nombre</label>
             <input type="text" class="form-control" id="nombre" required>
           </div>
-          <div class="mb-3">
-            <label class="form-label">Correo</label>
-            <input type="email" class="form-control" id="correo" required>
-          </div>
+
           <div id="errorMensaje" class="text-danger small"></div>
+
           <button type="submit" class="btn btn-success w-100">
             Confirmar inscripción
           </button>
@@ -173,7 +255,7 @@
   </div>
 </div>
 
-<#if usuario?? && (usuario.rol == 'ADMINISTRADOR' || usuario.rol == 'ORGANIZADOR')>
+<#if esGestion>
 <div class="modal fade" id="modalCrearEvento" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -189,22 +271,32 @@
             <label class="form-label">Título del Evento</label>
             <input type="text" class="form-control" name="titulo" required>
           </div>
+
           <div class="mb-3">
             <label class="form-label">Descripción</label>
             <textarea class="form-control" name="descripcion" rows="3" required></textarea>
           </div>
+
           <div class="mb-3">
             <label class="form-label">Fecha</label>
             <input type="date" class="form-control" name="fecha" required>
           </div>
+
+          <div class="mb-3">
+            <label class="form-label">Hora</label>
+            <input type="time" class="form-control" name="hora" required>
+          </div>
+
           <div class="mb-3">
             <label class="form-label">Lugar</label>
             <input type="text" class="form-control" name="lugar" required>
           </div>
+
           <div class="mb-3">
             <label class="form-label">Cupo Máximo</label>
             <input type="number" class="form-control" name="cupoMaximo" min="1" required>
           </div>
+
           <button type="submit" class="btn btn-success w-100">Guardar Evento</button>
         </form>
       </div>
