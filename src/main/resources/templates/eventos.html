@@ -24,7 +24,7 @@
     <#if usuario.rol == 'ADMINISTRADOR' || usuario.rol == 'ORGANIZADOR'>
     <button class="btn btn-success btn-sm me-2" data-bs-toggle="modal" data-bs-target="#modalCrearEvento">Crear Evento</button>
   </#if>
-
+  <a href="/escanear" class="btn btn-info btn-sm me-2 text-white">Escanear QR</a>
   <a href="/logout" class="btn btn-outline-light btn-sm">Cerrar Sesión</a>
   <#else>
   <a href="/login" class="btn btn-primary btn-sm">Iniciar Sesión</a>
