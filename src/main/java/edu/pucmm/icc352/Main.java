@@ -11,11 +11,15 @@ import io.javalin.http.Context;
 import org.h2.tools.Server;
 import org.hibernate.Session;
 
+import java.time.LocalDateTime;
 import java.io.StringWriter;
 import java.sql.SQLException;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 
 public class Main {
 
@@ -116,6 +120,30 @@ public class Main {
                 Map<String, Object> modelo = new HashMap<>();
                 modelo.put("usuario", construirUsuarioModelo(ctx));
                 ctx.render("templates/escanear.html", modelo);
+            });
+
+            config.routes.get("/eventos/{id}/resumen", ctx -> {
+                if (!esAdminOOrganizador(ctx)) {
+                    ctx.redirect("/eventos");
+                    return;
+                }
+
+                Long idEvento = Long.valueOf(ctx.pathParam("id"));
+
+                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+                    Evento evento = session.get(Evento.class, idEvento);
+
+                    if (evento == null) {
+                        ctx.status(404).result("Evento no encontrado");
+                        return;
+                    }
+
+                    Map<String, Object> modelo = new HashMap<>();
+                    modelo.put("evento", evento);
+                    modelo.put("usuario", construirUsuarioModelo(ctx));
+
+                    ctx.render("templates/resumen_evento.html", modelo);
+                }
             });
 
             config.routes.get("/admin/usuarios", ctx -> {
@@ -290,6 +318,7 @@ public class Main {
             config.routes.post("/api/cancelar-inscripcion", Main::cancelarInscripcion);
             config.routes.post("/api/asistencia", Main::procesarAsistencia);
             config.routes.get("/api/estadisticas/{id}", Main::obtenerEstadisticas);
+            config.routes.get("/api/graficos/{id}", Main::obtenerDatosGraficos);
 
         }).start(7000);
     }
@@ -422,6 +451,7 @@ public class Main {
                     correoSesion.trim().toLowerCase(),
                     token
             );
+            inscripcion.setFechaInscripcion(LocalDateTime.now());
 
             session.persist(inscripcion);
 
@@ -561,6 +591,7 @@ public class Main {
             }
 
             inscripcion.setAsistio(true);
+            inscripcion.setFechaAsistencia(LocalDateTime.now());
             session.merge(inscripcion);
             session.getTransaction().commit();
 
@@ -621,6 +652,77 @@ public class Main {
             ctx.status(500).json(Map.of(
                     "ok", false,
                     "mensaje", "Error: " + e.getMessage()
+            ));
+        }
+    }
+    private static void obtenerDatosGraficos(Context ctx) {
+        if (!esAdminOOrganizador(ctx)) {
+            ctx.status(403).json(Map.of(
+                    "ok", false,
+                    "mensaje", "No tienes permisos para ver gráficos"
+            ));
+            return;
+        }
+
+        Long idEvento = Long.valueOf(ctx.pathParam("id"));
+
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Evento evento = session.get(Evento.class, idEvento);
+
+            if (evento == null) {
+                ctx.status(404).json(Map.of(
+                        "ok", false,
+                        "mensaje", "Evento no encontrado"
+                ));
+                return;
+            }
+
+            List<Inscripcion> inscripciones = session.createQuery(
+                            "FROM Inscripcion i WHERE i.evento.id = :eventoId ORDER BY i.fechaInscripcion ASC",
+                            Inscripcion.class
+                    )
+                    .setParameter("eventoId", idEvento)
+                    .list();
+
+            Map<String, Integer> inscripcionesPorDia = new LinkedHashMap<>();
+            Map<String, Integer> asistenciaPorHora = new LinkedHashMap<>();
+
+            DateTimeFormatter formatoFecha = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+            DateTimeFormatter formatoHora = DateTimeFormatter.ofPattern("HH:00");
+
+            for (Inscripcion inscripcion : inscripciones) {
+
+                if (inscripcion.getFechaInscripcion() != null) {
+                    String dia = inscripcion.getFechaInscripcion().format(formatoFecha);
+                    inscripcionesPorDia.put(dia, inscripcionesPorDia.getOrDefault(dia, 0) + 1);
+                }
+
+                if (inscripcion.getFechaAsistencia() != null) {
+                    String hora = inscripcion.getFechaAsistencia().format(formatoHora);
+                    asistenciaPorHora.put(hora, asistenciaPorHora.getOrDefault(hora, 0) + 1);
+                }
+            }
+
+            Map<String, Object> respuesta = new HashMap<>();
+            respuesta.put("ok", true);
+
+            Map<String, Object> bloqueInscripciones = new HashMap<>();
+            bloqueInscripciones.put("labels", new ArrayList<>(inscripcionesPorDia.keySet()));
+            bloqueInscripciones.put("valores", new ArrayList<>(inscripcionesPorDia.values()));
+
+            Map<String, Object> bloqueAsistencia = new HashMap<>();
+            bloqueAsistencia.put("labels", new ArrayList<>(asistenciaPorHora.keySet()));
+            bloqueAsistencia.put("valores", new ArrayList<>(asistenciaPorHora.values()));
+
+            respuesta.put("inscripciones", bloqueInscripciones);
+            respuesta.put("asistencia", bloqueAsistencia);
+
+            ctx.json(respuesta);
+
+        } catch (Exception e) {
+            ctx.status(500).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Error generando gráficos: " + e.getMessage()
             ));
         }
     }

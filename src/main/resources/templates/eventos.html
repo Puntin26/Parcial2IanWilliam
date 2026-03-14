@@ -108,6 +108,10 @@
 
         <#if esGestion>
         <div class="mt-3 d-flex flex-column gap-2">
+          <a href="/eventos/${evento.id}/resumen" class="btn btn-outline-dark btn-sm w-100">
+            Ver resumen
+          </a>
+
           <form method="POST" action="/admin/eventos/estado/${evento.id}">
             <input type="hidden" name="accion" value="${evento.publicado?string('DESPUBLICAR','PUBLICAR')}">
             <button type="submit" class="btn btn-outline-primary btn-sm w-100">
