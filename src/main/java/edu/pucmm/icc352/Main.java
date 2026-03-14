@@ -12,6 +12,7 @@ import org.h2.tools.Server;
 import org.hibernate.Session;
 
 import java.time.LocalDateTime;
+import java.time.LocalDate;
 import java.io.StringWriter;
 import java.sql.SQLException;
 import java.util.HashMap;
@@ -59,7 +60,16 @@ public class Main {
                 ctx.render("templates/login.html");
             });
 
+            config.routes.get("/registro", ctx -> {
+                if (usuarioLogueado(ctx)) {
+                    ctx.redirect("/eventos");
+                    return;
+                }
+                ctx.render("templates/registro.html");
+            });
+
             config.routes.post("/login", Main::procesarLogin);
+            config.routes.post("/registro", Main::procesarRegistro);
 
             config.routes.get("/logout", ctx -> {
                 if (ctx.req().getSession(false) != null) {
@@ -380,6 +390,75 @@ public class Main {
         }
     }
 
+    private static void procesarRegistro(Context ctx) {
+        String correo = ctx.formParam("correo");
+        String username = ctx.formParam("username");
+        String password = ctx.formParam("password");
+
+        if (correo == null || correo.trim().isEmpty()
+                || username == null || username.trim().isEmpty()
+                || password == null || password.trim().isEmpty()) {
+
+            Map<String, Object> modelo = new HashMap<>();
+            modelo.put("error", "Todos los campos son obligatorios");
+            ctx.render("templates/registro.html", modelo);
+            return;
+        }
+
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            session.beginTransaction();
+
+            Usuario usuarioPorCorreo = session.createQuery(
+                            "FROM Usuario u WHERE lower(u.correo) = :correo",
+                            Usuario.class
+                    )
+                    .setParameter("correo", correo.trim().toLowerCase())
+                    .uniqueResult();
+
+            if (usuarioPorCorreo != null) {
+                rollbackIfActive(session);
+                Map<String, Object> modelo = new HashMap<>();
+                modelo.put("error", "Ya existe una cuenta con ese correo");
+                ctx.render("templates/registro.html", modelo);
+                return;
+            }
+
+            Usuario usuarioPorUsername = session.createQuery(
+                            "FROM Usuario u WHERE lower(u.username) = :username",
+                            Usuario.class
+                    )
+                    .setParameter("username", username.trim().toLowerCase())
+                    .uniqueResult();
+
+            if (usuarioPorUsername != null) {
+                rollbackIfActive(session);
+                Map<String, Object> modelo = new HashMap<>();
+                modelo.put("error", "Ese username ya está en uso");
+                ctx.render("templates/registro.html", modelo);
+                return;
+            }
+
+            Usuario nuevoUsuario = new Usuario(
+                    correo.trim().toLowerCase(),
+                    username.trim(),
+                    password.trim(),
+                    "PARTICIPANTE"
+            );
+
+            session.persist(nuevoUsuario);
+            session.getTransaction().commit();
+
+            Map<String, Object> modelo = new HashMap<>();
+            modelo.put("exito", "Registro completado. Ya puedes iniciar sesión.");
+            ctx.render("templates/login.html", modelo);
+
+        } catch (Exception e) {
+            Map<String, Object> modelo = new HashMap<>();
+            modelo.put("error", "Ocurrió un error al registrar el usuario");
+            ctx.render("templates/registro.html", modelo);
+        }
+    }
+
     private static void procesarInscripcion(Context ctx) {
         if (!usuarioLogueado(ctx)) {
             ctx.status(401).json(Map.of(
@@ -520,6 +599,27 @@ public class Main {
             }
 
             Evento evento = inscripcion.getEvento();
+
+            try {
+                LocalDate fechaEvento = LocalDate.parse(evento.getFecha());
+                LocalDate hoy = LocalDate.now();
+
+                if (fechaEvento.isBefore(hoy)) {
+                    rollbackIfActive(session);
+                    ctx.json(Map.of(
+                            "ok", false,
+                            "mensaje", "No puedes cancelar la inscripción porque la fecha del evento ya pasó"
+                    ));
+                    return;
+                }
+            } catch (Exception e) {
+                rollbackIfActive(session);
+                ctx.json(Map.of(
+                        "ok", false,
+                        "mensaje", "La fecha del evento no es válida"
+                ));
+                return;
+            }
 
             session.remove(inscripcion);
             evento.setInscritos(Math.max(0, evento.getInscritos() - 1));
