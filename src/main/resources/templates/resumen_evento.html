@@ -40,12 +40,14 @@
                         <div class="fw-bold">${evento.fecha}</div>
                     </div>
                 </div>
+
                 <div class="col-md-4">
                     <div class="border rounded p-3 bg-white">
                         <div class="small text-muted">Lugar</div>
                         <div class="fw-bold">${evento.lugar}</div>
                     </div>
                 </div>
+
                 <div class="col-md-4">
                     <div class="border rounded p-3 bg-white">
                         <div class="small text-muted">Cupo máximo</div>
@@ -58,7 +60,7 @@
 
     <div class="row g-4 mb-4">
         <div class="col-md-4">
-            <div class="card sombra-suave text-center">
+            <div class="card sombra-suave text-center h-100">
                 <div class="card-body">
                     <h6 class="text-muted">Total inscritos</h6>
                     <h2 id="totalInscritos">--</h2>
@@ -67,7 +69,7 @@
         </div>
 
         <div class="col-md-4">
-            <div class="card sombra-suave text-center">
+            <div class="card sombra-suave text-center h-100">
                 <div class="card-body">
                     <h6 class="text-muted">Total asistentes</h6>
                     <h2 id="totalAsistentes">--</h2>
@@ -76,7 +78,7 @@
         </div>
 
         <div class="col-md-4">
-            <div class="card sombra-suave text-center">
+            <div class="card sombra-suave text-center h-100">
                 <div class="card-body">
                     <h6 class="text-muted">% asistencia</h6>
                     <h2 id="porcentajeAsistencia">--</h2>
@@ -92,18 +94,26 @@
         </div>
     </div>
 
-    <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="card sombra-suave text-center">
+    <div class="row g-4">
+        <div class="col-md-6">
+            <div class="card sombra-suave h-100">
                 <div class="card-body">
-                    <h5 class="mb-3">Proporción de Asistencia</h5>
+                    <h5 class="mb-3">Inscripciones por día</h5>
+                    <canvas id="graficoInscripcionesDia"></canvas>
+                    <p id="sinInscripcionesDia" class="text-muted mt-3 d-none">
+                        No hay datos de inscripciones para mostrar.
+                    </p>
+                </div>
+            </div>
+        </div>
 
-                    <div style="max-width: 400px; margin: 0 auto;">
-                        <canvas id="graficoAsistencia"></canvas>
-                    </div>
-
-                    <p id="mensajeSinDatos" class="text-center text-muted mt-3 d-none">
-                        Aún no hay inscritos para mostrar en el gráfico.
+        <div class="col-md-6">
+            <div class="card sombra-suave h-100">
+                <div class="card-body">
+                    <h5 class="mb-3">Asistencia por hora</h5>
+                    <canvas id="graficoAsistenciaHora"></canvas>
+                    <p id="sinAsistenciaHora" class="text-muted mt-3 d-none">
+                        No hay datos de asistencia para mostrar.
                     </p>
                 </div>
             </div>
@@ -112,7 +122,6 @@
 </div>
 
 <script>
-    // Inyectamos el ID del evento desde Freemarker
     const eventoId = ${evento.id};
 
     async function cargarResumenCompleto() {
@@ -122,7 +131,6 @@
         const porcentajeAsistencia = document.getElementById("porcentajeAsistencia");
 
         try {
-            // Hacemos una única llamada a tu endpoint existente
             const respuesta = await fetch("/api/estadisticas/" + eventoId);
             const data = await respuesta.json();
 
@@ -131,39 +139,66 @@
                 return;
             }
 
-            // 1. Llenamos las tarjetas de texto
             totalInscritos.innerText = data.totalInscritos;
             totalAsistentes.innerText = data.totalAsistentes;
             porcentajeAsistencia.innerText = data.porcentajeAsistencia;
             mensajeEstado.innerHTML = '<span class="text-success fw-bold">Conexión exitosa. Datos actualizados.</span>';
 
-            // 2. Dibujamos el gráfico
-            const inscritos = data.totalInscritos;
-            const asistentes = data.totalAsistentes;
-            const ausentes = inscritos - asistentes;
+            // Gráfico 1: Inscripciones por día
+            const labelsDia = data.inscripcionesPorDia.labels;
+            const valoresDia = data.inscripcionesPorDia.data;
 
-            if (inscritos > 0) {
-                new Chart(document.getElementById("graficoAsistencia"), {
-                    type: 'doughnut',
+            if (labelsDia.length > 0) {
+                new Chart(document.getElementById("graficoInscripcionesDia"), {
+                    type: 'bar',
                     data: {
-                        labels: ['Asistieron', 'Ausentes'],
+                        labels: labelsDia,
                         datasets: [{
-                            data: [asistentes, ausentes],
-                            backgroundColor: ['#198754', '#dc3545'], // Verde y Rojo de Bootstrap
-                            borderWidth: 1
+                            label: 'Inscripciones',
+                            data: valoresDia,
+                            backgroundColor: '#0d6efd'
                         }]
                     },
                     options: {
                         responsive: true,
                         plugins: {
-                            legend: { position: 'bottom' }
+                            legend: { display: false }
                         }
                     }
                 });
             } else {
-                // Ocultamos el gráfico y mostramos el mensaje si está vacío
-                document.getElementById("graficoAsistencia").style.display = 'none';
-                document.getElementById("mensajeSinDatos").classList.remove('d-none');
+                document.getElementById("graficoInscripcionesDia").style.display = "none";
+                document.getElementById("sinInscripcionesDia").classList.remove("d-none");
+            }
+
+            // Gráfico 2: Asistencia por hora
+            const labelsHora = data.asistenciaPorHora.labels;
+            const valoresHora = data.asistenciaPorHora.data;
+
+            if (labelsHora.length > 0) {
+                new Chart(document.getElementById("graficoAsistenciaHora"), {
+                    type: 'line',
+                    data: {
+                        labels: labelsHora,
+                        datasets: [{
+                            label: 'Asistencias',
+                            data: valoresHora,
+                            borderColor: '#198754',
+                            backgroundColor: 'rgba(25, 135, 84, 0.2)',
+                            tension: 0.3,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {
+                            legend: { display: false }
+                        }
+                    }
+                });
+            } else {
+                document.getElementById("graficoAsistenciaHora").style.display = "none";
+                document.getElementById("sinAsistenciaHora").classList.remove("d-none");
             }
 
         } catch (error) {
@@ -172,7 +207,6 @@
         }
     }
 
-    // Ejecutamos la función al cargar la página
     cargarResumenCompleto();
 </script>
 
