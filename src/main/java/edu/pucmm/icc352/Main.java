@@ -87,6 +87,56 @@ public class Main {
                 }
             });
 
+
+            config.routes.get("/registro", ctx -> {
+                ctx.render("templates/registro.html");
+            });
+
+            config.routes.post("/registro", ctx -> {
+                String correo = ctx.formParam("correo");
+                String username = ctx.formParam("username");
+                String password = ctx.formParam("password");
+
+                if (correo == null || correo.trim().isEmpty()
+                        || username == null || username.trim().isEmpty()
+                        || password == null || password.trim().isEmpty()) {
+                    ctx.status(400).result("Todos los campos son obligatorios.");
+                    return;
+                }
+
+                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+
+                    Usuario usuarioExistente = session.createQuery(
+                                    "FROM Usuario WHERE correo = :correo", Usuario.class)
+                            .setParameter("correo", correo.trim().toLowerCase())
+                            .uniqueResult();
+
+                    if (usuarioExistente != null) {
+                        ctx.status(400).result("Ya existe una cuenta con ese correo.");
+                        return;
+                    }
+
+                    session.beginTransaction();
+
+                    Usuario nuevoUsuario = new Usuario(
+                            correo.trim().toLowerCase(),
+                            username.trim(),
+                            password.trim(),
+                            "PARTICIPANTE"
+                    );
+
+                    nuevoUsuario.setBloqueado(false);
+
+                    session.persist(nuevoUsuario);
+                    session.getTransaction().commit();
+
+                    ctx.redirect("/login");
+
+                } catch (Exception e) {
+                    ctx.status(500).result("Error al registrar usuario: " + e.getMessage());
+                }
+            });
+
             config.routes.get("/logout", ctx -> {
                 ctx.req().getSession().invalidate();
                 ctx.redirect("/");
@@ -95,19 +145,64 @@ public class Main {
             // ==========================================
             // RUTAS DE EVENTOS (Vista general)
             // ==========================================
+
+
             config.routes.get("/eventos", ctx -> {
                 Usuario usuarioSesion = ctx.sessionAttribute("usuarioActual");
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     List<Evento> eventosReales = session.createQuery("FROM Evento", Evento.class).list();
 
+                    List<Long> eventosInscritosIds = new java.util.ArrayList<>();
+
+                    if (usuarioSesion != null) {
+                        eventosInscritosIds = session.createQuery(
+                                        "SELECT i.evento.id FROM Inscripcion i WHERE i.correo = :correo",
+                                        Long.class
+                                )
+                                .setParameter("correo", usuarioSesion.getCorreo().trim().toLowerCase())
+                                .list();
+                    }
+
                     Map<String, Object> modelo = new HashMap<>();
                     modelo.put("titulo", "Eventos Académicos");
                     modelo.put("eventos", eventosReales);
                     modelo.put("usuario", usuarioSesion);
+                    modelo.put("eventosInscritosIds", eventosInscritosIds);
 
                     ctx.render("templates/eventos.html", modelo);
+                } catch (Exception e) {
+                    ctx.status(500).result("Error cargando eventos: " + e.getMessage());
                 }
+            });
+
+            config.routes.get("/eventos/{id}/resumen", ctx -> {
+
+                Usuario usuario = ctx.sessionAttribute("usuarioActual");
+
+                if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
+                    ctx.redirect("/eventos");
+                    return;
+                }
+
+                Long idEvento = Long.valueOf(ctx.pathParam("id"));
+
+                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+
+                    Evento evento = session.get(Evento.class, idEvento);
+
+                    if (evento == null) {
+                        ctx.status(404).result("Evento no encontrado");
+                        return;
+                    }
+
+                    Map<String, Object> modelo = new HashMap<>();
+                    modelo.put("usuario", usuario);
+                    modelo.put("evento", evento);
+
+                    ctx.render("templates/resumen_evento.html", modelo);
+                }
+
             });
 
             // ==========================================
@@ -314,13 +409,23 @@ public class Main {
     // ==========================================
 
     private static void procesarInscripcion(Context ctx) {
+        Usuario usuario = ctx.sessionAttribute("usuarioActual");
+
+        if (usuario == null) {
+            ctx.status(401).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Debe iniciar sesión antes de inscribirse"
+            ));
+            return;
+        }
+
         InscripcionRequest request = ctx.bodyAsClass(InscripcionRequest.class);
 
-        if (request.getNombre() == null || request.getNombre().trim().isEmpty()
-                || request.getCorreo() == null || request.getCorreo().trim().isEmpty()
-                || request.getEventoId() == null) {
-
-            ctx.json(Map.of("ok", false, "mensaje", "Todos los campos son obligatorios"));
+        if (request.getEventoId() == null) {
+            ctx.status(400).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Evento inválido"
+            ));
             return;
         }
 
@@ -330,16 +435,47 @@ public class Main {
             Evento evento = session.get(Evento.class, Long.valueOf(request.getEventoId()));
 
             if (evento == null) {
-                ctx.json(Map.of("ok", false, "mensaje", "El evento no existe"));
+                ctx.status(404).json(Map.of(
+                        "ok", false,
+                        "mensaje", "El evento no existe"
+                ));
                 return;
             }
+
+            if (evento.getInscritos() >= evento.getCupoMaximo()) {
+                ctx.status(400).json(Map.of(
+                        "ok", false,
+                        "mensaje", "El evento ya no tiene cupo disponible"
+                ));
+                return;
+            }
+
+            Inscripcion yaExiste = session.createQuery(
+                            "FROM Inscripcion WHERE evento.id = :eventoId AND correo = :correo",
+                            Inscripcion.class
+                    )
+                    .setParameter("eventoId", evento.getId())
+                    .setParameter("correo", usuario.getCorreo().trim().toLowerCase())
+                    .uniqueResult();
+
+            if (yaExiste != null) {
+                ctx.status(400).json(Map.of(
+                        "ok", false,
+                        "mensaje", "Ya estás inscrito en este evento"
+                ));
+                return;
+            }
+
+            String nombreUsuario = usuario.getUsername() != null && !usuario.getUsername().trim().isEmpty()
+                    ? usuario.getUsername().trim()
+                    : usuario.getCorreo().trim();
 
             String token = "QR-" + System.currentTimeMillis();
 
             Inscripcion inscripcion = new Inscripcion(
                     evento,
-                    request.getNombre().trim(),
-                    request.getCorreo().trim().toLowerCase(),
+                    nombreUsuario,
+                    usuario.getCorreo().trim().toLowerCase(),
                     token
             );
 
@@ -354,12 +490,17 @@ public class Main {
                     "ok", true,
                     "mensaje", "Inscripción realizada correctamente",
                     "eventoId", evento.getId(),
+                    "inscritos", evento.getInscritos(),
+                    "usuarioId", usuario.getId(),
                     "correo", inscripcion.getCorreo(),
                     "token", inscripcion.getTokenQr()
             ));
 
         } catch (Exception e) {
-            ctx.json(Map.of("ok", false, "mensaje", "Error guardando la inscripción: " + e.getMessage()));
+            ctx.status(500).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Error guardando la inscripción: " + e.getMessage()
+            ));
         }
     }
 
@@ -401,27 +542,60 @@ public class Main {
 
     // Elimina una inscripción si el estudiante cancela
     private static void cancelarInscripcion(Context ctx) {
-        Long idInscripcion = Long.valueOf(ctx.pathParam("id"));
+
+        Usuario usuario = ctx.sessionAttribute("usuarioActual");
+
+        if (usuario == null) {
+            ctx.status(401).json(Map.of("ok", false, "mensaje", "Debes iniciar sesión"));
+            return;
+        }
+
+        Long idEvento = Long.valueOf(ctx.pathParam("id"));
 
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+
             session.beginTransaction();
-            Inscripcion inscripcion = session.get(Inscripcion.class, idInscripcion);
 
-            if (inscripcion != null) {
-                Evento evento = inscripcion.getEvento();
-                evento.setInscritos(Math.max(0, evento.getInscritos() - 1));
+            Inscripcion inscripcion = session.createQuery(
+                            "FROM Inscripcion WHERE evento.id = :eventoId AND correo = :correo",
+                            Inscripcion.class
+                    )
+                    .setParameter("eventoId", idEvento)
+                    .setParameter("correo", usuario.getCorreo())
+                    .uniqueResult();
 
-                session.merge(evento);
-                session.remove(inscripcion);
-                session.getTransaction().commit();
+            if (inscripcion == null) {
 
-                ctx.json(Map.of("ok", true, "mensaje", "Inscripción cancelada."));
-            } else {
-                ctx.status(404).json(Map.of("ok", false, "mensaje", "Inscripción no encontrada."));
+                ctx.json(Map.of("ok", false, "mensaje", "No estás inscrito en este evento"));
+                return;
+
             }
+
+            Evento evento = inscripcion.getEvento();
+
+            evento.setInscritos(Math.max(0, evento.getInscritos() - 1));
+
+            session.merge(evento);
+            session.remove(inscripcion);
+
+            session.getTransaction().commit();
+
+            ctx.json(Map.of(
+                    "ok", true,
+                    "mensaje", "Inscripción cancelada",
+                    "eventoId", evento.getId(),
+                    "inscritos", evento.getInscritos()
+            ));
+
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("ok", false, "mensaje", "Error: " + e.getMessage()));
+
+            ctx.status(500).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Error cancelando inscripción"
+            ));
+
         }
+
     }
 
     // Devuelve los datos JSON para Chart.js o Google Charts
