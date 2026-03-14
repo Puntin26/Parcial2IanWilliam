@@ -111,6 +111,23 @@ public class Main {
             });
 
             // ==========================================
+            // RUTA PARA VER ESTADÍSTICAS (Solo Admin/Organizador)
+            // ==========================================
+            config.routes.get("/admin/estadisticas/{id}", ctx -> {
+                Usuario usuario = ctx.sessionAttribute("usuarioActual");
+                if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
+                    ctx.redirect("/eventos");
+                    return;
+                }
+
+                Map<String, Object> modelo = new HashMap<>();
+                modelo.put("usuario", usuario);
+                modelo.put("eventoId", ctx.pathParam("id"));
+
+                ctx.render("templates/estadisticas.html", modelo);
+            });
+
+            // ==========================================
             // RUTA PARA EL ESCÁNER QR (Solo Admin y Organizador)
             // ==========================================
             config.routes.get("/escanear", ctx -> {
