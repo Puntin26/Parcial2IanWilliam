@@ -1,17 +1,16 @@
 package edu.pucmm.icc352;
 
 import edu.pucmm.icc352.encapsulaciones.Evento;
+import edu.pucmm.icc352.encapsulaciones.Inscripcion;
 import edu.pucmm.icc352.encapsulaciones.Usuario;
 import edu.pucmm.icc352.servicios.HibernateUtil;
-import edu.pucmm.icc352.encapsulaciones.Inscripcion;
+import freemarker.template.Configuration;
+import freemarker.template.Template;
 import io.javalin.Javalin;
 import io.javalin.http.Context;
 import org.h2.tools.Server;
 import org.hibernate.Session;
-import freemarker.template.Configuration;
-import freemarker.template.Template;
 
-import java.io.File;
 import java.io.StringWriter;
 import java.sql.SQLException;
 import java.util.HashMap;
@@ -22,27 +21,20 @@ public class Main {
 
     public static void main(String[] args) throws SQLException {
 
-        // 1. INICIAR H2 EN MODO SERVIDOR TCP
         Server.createTcpServer("-tcp", "-tcpAllowOthers", "-tcpPort", "9092").start();
         System.out.println("✅ Servidor H2 iniciado en modo TCP en el puerto 9092");
 
-        // 2. CREAR ADMIN Y EVENTOS SI NO EXISTEN
         crearAdminPorDefecto();
         crearEventosPrueba();
 
-        // 3. INICIAR JAVALIN
         Javalin app = Javalin.create(config -> {
             config.staticFiles.add("/public");
 
-            // Configurar Freemarker para renderizar templates
             Configuration fmConfig = new Configuration(Configuration.VERSION_2_3_32);
-            try {
-                fmConfig.setDirectoryForTemplateLoading(new File("src/main/resources"));
-            } catch (Exception e) {
-                System.err.println("Error configurando Freemarker: " + e.getMessage());
-            }
+            fmConfig.setClassForTemplateLoading(Main.class, "/");
+            fmConfig.setDefaultEncoding("UTF-8");
 
-            config.fileRenderer((filePath, model, _) -> {
+            config.fileRenderer((filePath, model, context) -> {
                 try {
                     Template template = fmConfig.getTemplate(filePath);
                     StringWriter out = new StringWriter();
@@ -53,86 +45,142 @@ public class Main {
                 }
             });
 
-            // Redirección inicial
-            config.routes.get("/", ctx -> ctx.redirect("/eventos"));
+            config.routes.get("/", ctx -> ctx.redirect("/login"));
 
-            // ==========================================
-            // RUTAS DE LOGIN Y SESIÓN
-            // ==========================================
             config.routes.get("/login", ctx -> {
+                if (usuarioLogueado(ctx)) {
+                    ctx.redirect("/eventos");
+                    return;
+                }
                 ctx.render("templates/login.html");
             });
 
-            config.routes.post("/login", ctx -> {
-                String correo = ctx.formParam("correo");
-                String password = ctx.formParam("password");
-
-                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-                    Usuario usuario = session.createQuery("FROM Usuario WHERE correo = :correo", Usuario.class)
-                            .setParameter("correo", correo)
-                            .uniqueResult();
-
-                    if (usuario != null && usuario.getPassword().equals(password)) {
-                        if (usuario.isBloqueado()) {
-                            ctx.status(403).result("Usuario bloqueado. Contacte al administrador.");
-                        } else {
-                            ctx.sessionAttribute("usuarioActual", usuario);
-                            ctx.redirect("/eventos");
-                        }
-                    } else {
-                        ctx.status(401).result("Credenciales incorrectas");
-                    }
-                } catch (Exception e) {
-                    ctx.status(500).result("Error en el servidor: " + e.getMessage());
-                }
-            });
+            config.routes.post("/login", Main::procesarLogin);
 
             config.routes.get("/logout", ctx -> {
-                ctx.req().getSession().invalidate();
-                ctx.redirect("/");
+                if (ctx.req().getSession(false) != null) {
+                    ctx.req().getSession().invalidate();
+                }
+                ctx.redirect("/login");
             });
 
-            // ==========================================
-            // RUTAS DE EVENTOS (Vista general)
-            // ==========================================
             config.routes.get("/eventos", ctx -> {
-                Usuario usuarioSesion = ctx.sessionAttribute("usuarioActual");
+                System.out.println("SESSION usuarioId EN /eventos: " + ctx.sessionAttribute("usuarioId"));
+
+                if (!usuarioLogueado(ctx)) {
+                    ctx.redirect("/login");
+                    return;
+                }
+
+                String rol = ctx.sessionAttribute("usuarioRol");
+                String correo = ctx.sessionAttribute("usuarioCorreo");
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-                    List<Evento> eventosReales = session.createQuery("FROM Evento", Evento.class).list();
+                    List<Evento> eventosReales;
+
+                    if ("PARTICIPANTE".equals(rol)) {
+                        eventosReales = session.createQuery(
+                                "FROM Evento e WHERE e.publicado = true ORDER BY e.id",
+                                Evento.class
+                        ).list();
+                    } else {
+                        eventosReales = session.createQuery(
+                                "FROM Evento e ORDER BY e.id",
+                                Evento.class
+                        ).list();
+                    }
+
+                    List<Long> eventosInscritosIds = session.createQuery(
+                                    "SELECT i.evento.id FROM Inscripcion i WHERE lower(i.correo) = :correo",
+                                    Long.class
+                            )
+                            .setParameter("correo", correo.toLowerCase())
+                            .list();
 
                     Map<String, Object> modelo = new HashMap<>();
                     modelo.put("titulo", "Eventos Académicos");
                     modelo.put("eventos", eventosReales);
-                    modelo.put("usuario", usuarioSesion);
+                    modelo.put("eventosInscritosIds", eventosInscritosIds);
+                    modelo.put("usuario", construirUsuarioModelo(ctx));
 
                     ctx.render("templates/eventos.html", modelo);
                 }
             });
 
-            // ==========================================
-            // RUTA PARA EL ESCÁNER QR (Solo Admin y Organizador)
-            // ==========================================
             config.routes.get("/escanear", ctx -> {
-                Usuario usuario = ctx.sessionAttribute("usuarioActual");
-
-                // Si no está logueado o es un simple participante, lo pateamos a la lista
-                if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
+                if (!esAdminOOrganizador(ctx)) {
                     ctx.redirect("/eventos");
                     return;
                 }
 
                 Map<String, Object> modelo = new HashMap<>();
-                modelo.put("usuario", usuario);
+                modelo.put("usuario", construirUsuarioModelo(ctx));
                 ctx.render("templates/escanear.html", modelo);
             });
 
-            // ==========================================
-            // CRUD DE EVENTOS (Solo Admin y Organizador)
-            // ==========================================
+            config.routes.get("/admin/usuarios", ctx -> {
+                if (!esAdmin(ctx)) {
+                    ctx.status(403).result("Acceso denegado. Solo administradores.");
+                    return;
+                }
+
+                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+                    List<Usuario> usuarios = session.createQuery("FROM Usuario ORDER BY id", Usuario.class).list();
+
+                    Map<String, Object> modelo = new HashMap<>();
+                    modelo.put("usuarios", usuarios);
+                    modelo.put("usuario", construirUsuarioModelo(ctx));
+                    ctx.render("templates/admin_usuarios.html", modelo);
+                }
+            });
+
+            config.routes.post("/admin/usuarios/rol/{id}", ctx -> {
+                if (!esAdmin(ctx)) {
+                    ctx.status(403).result("Acceso denegado.");
+                    return;
+                }
+
+                Long idUsuario = Long.valueOf(ctx.pathParam("id"));
+                String nuevoRol = ctx.formParam("rol");
+
+                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+                    session.beginTransaction();
+
+                    Usuario usuarioTarget = session.get(Usuario.class, idUsuario);
+                    if (usuarioTarget != null && !"ADMINISTRADOR".equals(usuarioTarget.getRol())) {
+                        usuarioTarget.setRol(nuevoRol);
+                        session.merge(usuarioTarget);
+                    }
+
+                    session.getTransaction().commit();
+                    ctx.redirect("/admin/usuarios");
+                }
+            });
+
+            config.routes.post("/admin/usuarios/bloquear/{id}", ctx -> {
+                if (!esAdmin(ctx)) {
+                    ctx.status(403).result("Acceso denegado.");
+                    return;
+                }
+
+                Long idUsuario = Long.valueOf(ctx.pathParam("id"));
+
+                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+                    session.beginTransaction();
+
+                    Usuario usuarioTarget = session.get(Usuario.class, idUsuario);
+                    if (usuarioTarget != null && !"ADMINISTRADOR".equals(usuarioTarget.getRol())) {
+                        usuarioTarget.setBloqueado(!usuarioTarget.isBloqueado());
+                        session.merge(usuarioTarget);
+                    }
+
+                    session.getTransaction().commit();
+                    ctx.redirect("/admin/usuarios");
+                }
+            });
+
             config.routes.post("/admin/eventos/crear", ctx -> {
-                Usuario usuario = ctx.sessionAttribute("usuarioActual");
-                if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
+                if (!esAdminOOrganizador(ctx)) {
                     ctx.status(403).result("Acceso denegado: No tienes permisos para crear eventos.");
                     return;
                 }
@@ -145,9 +193,11 @@ public class Main {
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
+
                     Evento nuevoEvento = new Evento(titulo, descripcion, fecha, lugar, cupoMaximo);
                     nuevoEvento.setInscritos(0);
                     nuevoEvento.setPublicado(false);
+
                     session.persist(nuevoEvento);
                     session.getTransaction().commit();
                     ctx.redirect("/eventos");
@@ -155,17 +205,17 @@ public class Main {
             });
 
             config.routes.post("/admin/eventos/editar/{id}", ctx -> {
-                Usuario usuario = ctx.sessionAttribute("usuarioActual");
-                if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
+                if (!esAdminOOrganizador(ctx)) {
                     ctx.status(403).result("Acceso denegado.");
                     return;
                 }
 
                 Long id = Long.valueOf(ctx.pathParam("id"));
+
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
-                    Evento evento = session.get(Evento.class, id);
 
+                    Evento evento = session.get(Evento.class, id);
                     if (evento != null) {
                         evento.setTitulo(ctx.formParam("titulo"));
                         evento.setDescripcion(ctx.formParam("descripcion"));
@@ -174,14 +224,14 @@ public class Main {
                         evento.setCupoMaximo(Integer.parseInt(ctx.formParam("cupoMaximo")));
                         session.merge(evento);
                     }
+
                     session.getTransaction().commit();
                     ctx.redirect("/eventos");
                 }
             });
 
             config.routes.post("/admin/eventos/estado/{id}", ctx -> {
-                Usuario usuario = ctx.sessionAttribute("usuarioActual");
-                if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
+                if (!esAdminOOrganizador(ctx)) {
                     ctx.status(403).result("Acceso denegado.");
                     return;
                 }
@@ -191,8 +241,8 @@ public class Main {
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
-                    Evento evento = session.get(Evento.class, id);
 
+                    Evento evento = session.get(Evento.class, id);
                     if (evento != null) {
                         if ("PUBLICAR".equalsIgnoreCase(accion)) {
                             evento.setPublicado(true);
@@ -206,72 +256,14 @@ public class Main {
                         }
                         session.merge(evento);
                     }
+
                     session.getTransaction().commit();
                     ctx.redirect("/eventos");
                 }
             });
 
-            // ==========================================
-            // PANEL DE ADMINISTRADOR
-            // ==========================================
-            config.routes.get("/admin/usuarios", ctx -> {
-                Usuario admin = ctx.sessionAttribute("usuarioActual");
-                if (admin == null || !admin.getRol().equals("ADMINISTRADOR")) {
-                    ctx.status(403).result("Acceso denegado. Solo administradores.");
-                    return;
-                }
-
-                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-                    List<Usuario> usuarios = session.createQuery("FROM Usuario", Usuario.class).list();
-                    Map<String, Object> modelo = new HashMap<>();
-                    modelo.put("usuarios", usuarios);
-                    modelo.put("usuario", admin);
-                    ctx.render("templates/admin_usuarios.html", modelo);
-                }
-            });
-
-            config.routes.post("/admin/usuarios/rol/{id}", ctx -> {
-                Usuario admin = ctx.sessionAttribute("usuarioActual");
-                if (admin == null || !admin.getRol().equals("ADMINISTRADOR")) return;
-
-                Long idUsuario = Long.valueOf(ctx.pathParam("id"));
-                String nuevoRol = ctx.formParam("rol");
-
-                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-                    session.beginTransaction();
-                    Usuario usuarioTarget = session.get(Usuario.class, idUsuario);
-
-                    if (usuarioTarget != null && !usuarioTarget.getRol().equals("ADMINISTRADOR")) {
-                        usuarioTarget.setRol(nuevoRol);
-                        session.merge(usuarioTarget);
-                    }
-                    session.getTransaction().commit();
-                    ctx.redirect("/admin/usuarios");
-                }
-            });
-
-            config.routes.post("/admin/usuarios/bloquear/{id}", ctx -> {
-                Usuario admin = ctx.sessionAttribute("usuarioActual");
-                if (admin == null || !admin.getRol().equals("ADMINISTRADOR")) return;
-
-                Long idUsuario = Long.valueOf(ctx.pathParam("id"));
-
-                try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-                    session.beginTransaction();
-                    Usuario usuarioTarget = session.get(Usuario.class, idUsuario);
-
-                    if (usuarioTarget != null && !usuarioTarget.getRol().equals("ADMINISTRADOR")) {
-                        usuarioTarget.setBloqueado(!usuarioTarget.isBloqueado());
-                        session.merge(usuarioTarget);
-                    }
-                    session.getTransaction().commit();
-                    ctx.redirect("/admin/usuarios");
-                }
-            });
-
             config.routes.post("/admin/eventos/eliminar/{id}", ctx -> {
-                Usuario admin = ctx.sessionAttribute("usuarioActual");
-                if (admin == null || !admin.getRol().equals("ADMINISTRADOR")) {
+                if (!esAdmin(ctx)) {
                     ctx.status(403).result("Acceso denegado.");
                     return;
                 }
@@ -280,42 +272,105 @@ public class Main {
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
-                    Evento eventoTarget = session.get(Evento.class, idEvento);
 
+                    Evento eventoTarget = session.get(Evento.class, idEvento);
                     if (eventoTarget != null) {
                         session.createMutationQuery("DELETE FROM Inscripcion WHERE evento.id = :eventoId")
                                 .setParameter("eventoId", idEvento)
                                 .executeUpdate();
                         session.remove(eventoTarget);
                     }
+
                     session.getTransaction().commit();
                     ctx.redirect("/eventos");
                 }
             });
 
-            // ==========================================
-            // RUTAS DE APIS PARA JAVASCRIPT / FETCH (Persona 2)
-            // ==========================================
             config.routes.post("/api/inscripciones", Main::procesarInscripcion);
+            config.routes.post("/api/cancelar-inscripcion", Main::cancelarInscripcion);
             config.routes.post("/api/asistencia", Main::procesarAsistencia);
-            config.routes.delete("/api/inscripciones/{id}", Main::cancelarInscripcion);
             config.routes.get("/api/estadisticas/{id}", Main::obtenerEstadisticas);
 
         }).start(7000);
     }
 
-    // ==========================================
-    // MÉTODOS DE APOYO Y APIS
-    // ==========================================
+    private static void procesarLogin(Context ctx) {
+        String correo = ctx.formParam("correo");
+        String username = ctx.formParam("username");
+        String password = ctx.formParam("password");
+
+        if (correo == null || correo.trim().isEmpty()
+                || username == null || username.trim().isEmpty()
+                || password == null || password.trim().isEmpty()) {
+
+            Map<String, Object> modelo = new HashMap<>();
+            modelo.put("error", "Todos los campos son obligatorios");
+            ctx.render("templates/login.html", modelo);
+            return;
+        }
+
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            Usuario usuario = session.createQuery(
+                            "FROM Usuario u WHERE lower(u.correo) = :correo AND lower(u.username) = :username AND u.password = :password",
+                            Usuario.class
+                    )
+                    .setParameter("correo", correo.trim().toLowerCase())
+                    .setParameter("username", username.trim().toLowerCase())
+                    .setParameter("password", password.trim())
+                    .uniqueResult();
+
+            if (usuario == null) {
+                Map<String, Object> modelo = new HashMap<>();
+                modelo.put("error", "Credenciales incorrectas");
+                ctx.render("templates/login.html", modelo);
+                return;
+            }
+
+            if (usuario.isBloqueado()) {
+                Map<String, Object> modelo = new HashMap<>();
+                modelo.put("error", "Tu usuario está bloqueado");
+                ctx.render("templates/login.html", modelo);
+                return;
+            }
+
+            ctx.req().getSession(true);
+
+            ctx.sessionAttribute("usuarioId", usuario.getId());
+            ctx.sessionAttribute("usuarioCorreo", usuario.getCorreo());
+            ctx.sessionAttribute("usuarioUsername", usuario.getUsername());
+            ctx.sessionAttribute("usuarioRol", usuario.getRol());
+
+            System.out.println("LOGIN OK -> usuarioId: " + usuario.getId());
+
+            ctx.redirect("/eventos");
+
+        } catch (Exception e) {
+            Map<String, Object> modelo = new HashMap<>();
+            modelo.put("error", "Ocurrió un error al iniciar sesión");
+            ctx.render("templates/login.html", modelo);
+        }
+    }
 
     private static void procesarInscripcion(Context ctx) {
+        if (!usuarioLogueado(ctx)) {
+            ctx.status(401).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Debes iniciar sesión"
+            ));
+            return;
+        }
+
         InscripcionRequest request = ctx.bodyAsClass(InscripcionRequest.class);
+        String correoSesion = ctx.sessionAttribute("usuarioCorreo");
 
         if (request.getNombre() == null || request.getNombre().trim().isEmpty()
-                || request.getCorreo() == null || request.getCorreo().trim().isEmpty()
-                || request.getEventoId() == null) {
+                || request.getEventoId() == null
+                || correoSesion == null || correoSesion.trim().isEmpty()) {
 
-            ctx.json(Map.of("ok", false, "mensaje", "Todos los campos son obligatorios"));
+            ctx.json(Map.of(
+                    "ok", false,
+                    "mensaje", "Todos los campos son obligatorios"
+            ));
             return;
         }
 
@@ -325,7 +380,37 @@ public class Main {
             Evento evento = session.get(Evento.class, Long.valueOf(request.getEventoId()));
 
             if (evento == null) {
-                ctx.json(Map.of("ok", false, "mensaje", "El evento no existe"));
+                rollbackIfActive(session);
+                ctx.json(Map.of(
+                        "ok", false,
+                        "mensaje", "El evento no existe"
+                ));
+                return;
+            }
+
+            Long inscripcionesExistentes = session.createQuery(
+                            "SELECT COUNT(i) FROM Inscripcion i WHERE i.evento.id = :eventoId AND lower(i.correo) = :correo",
+                            Long.class
+                    )
+                    .setParameter("eventoId", evento.getId())
+                    .setParameter("correo", correoSesion.trim().toLowerCase())
+                    .uniqueResult();
+
+            if (inscripcionesExistentes != null && inscripcionesExistentes > 0) {
+                rollbackIfActive(session);
+                ctx.json(Map.of(
+                        "ok", false,
+                        "mensaje", "Ya estás inscrito en este evento"
+                ));
+                return;
+            }
+
+            if (evento.getInscritos() >= evento.getCupoMaximo()) {
+                rollbackIfActive(session);
+                ctx.json(Map.of(
+                        "ok", false,
+                        "mensaje", "El evento ya alcanzó su cupo máximo"
+                ));
                 return;
             }
 
@@ -334,7 +419,7 @@ public class Main {
             Inscripcion inscripcion = new Inscripcion(
                     evento,
                     request.getNombre().trim(),
-                    request.getCorreo().trim().toLowerCase(),
+                    correoSesion.trim().toLowerCase(),
                     token
             );
 
@@ -350,37 +435,128 @@ public class Main {
                     "mensaje", "Inscripción realizada correctamente",
                     "eventoId", evento.getId(),
                     "correo", inscripcion.getCorreo(),
-                    "token", inscripcion.getTokenQr()
+                    "token", inscripcion.getTokenQr(),
+                    "inscritos", evento.getInscritos()
             ));
 
         } catch (Exception e) {
-            ctx.json(Map.of("ok", false, "mensaje", "Error guardando la inscripción: " + e.getMessage()));
+            ctx.json(Map.of(
+                    "ok", false,
+                    "mensaje", "Error guardando la inscripción: " + e.getMessage()
+            ));
         }
     }
 
-    // Procesa el escaneo del código QR
-    private static void procesarAsistencia(Context ctx) {
-        Map body = ctx.bodyAsClass(Map.class);
-        String token = (String) body.get("token");
+    private static void cancelarInscripcion(Context ctx) {
+        if (!usuarioLogueado(ctx)) {
+            ctx.status(401).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Debes iniciar sesión"
+            ));
+            return;
+        }
 
-        if (token == null || token.trim().isEmpty()) {
-            ctx.status(400).json(Map.of("ok", false, "mensaje", "Token inválido"));
+        InscripcionRequest request = ctx.bodyAsClass(InscripcionRequest.class);
+        String correoSesion = ctx.sessionAttribute("usuarioCorreo");
+
+        if (request.getEventoId() == null
+                || correoSesion == null || correoSesion.trim().isEmpty()) {
+
+            ctx.json(Map.of(
+                    "ok", false,
+                    "mensaje", "Datos inválidos"
+            ));
             return;
         }
 
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             session.beginTransaction();
-            Inscripcion inscripcion = session.createQuery("FROM Inscripcion WHERE tokenQr = :token", Inscripcion.class)
+
+            Inscripcion inscripcion = session.createQuery(
+                            "FROM Inscripcion i WHERE i.evento.id = :eventoId AND lower(i.correo) = :correo",
+                            Inscripcion.class
+                    )
+                    .setParameter("eventoId", request.getEventoId())
+                    .setParameter("correo", correoSesion.trim().toLowerCase())
+                    .uniqueResult();
+
+            if (inscripcion == null) {
+                rollbackIfActive(session);
+                ctx.json(Map.of(
+                        "ok", false,
+                        "mensaje", "No existe una inscripción para este usuario en este evento"
+                ));
+                return;
+            }
+
+            Evento evento = inscripcion.getEvento();
+
+            session.remove(inscripcion);
+            evento.setInscritos(Math.max(0, evento.getInscritos() - 1));
+            session.merge(evento);
+
+            session.getTransaction().commit();
+
+            ctx.json(Map.of(
+                    "ok", true,
+                    "mensaje", "Inscripción cancelada correctamente",
+                    "eventoId", evento.getId(),
+                    "inscritos", evento.getInscritos()
+            ));
+
+        } catch (Exception e) {
+            ctx.json(Map.of(
+                    "ok", false,
+                    "mensaje", "Error cancelando inscripción: " + e.getMessage()
+            ));
+        }
+    }
+
+    private static void procesarAsistencia(Context ctx) {
+        if (!esAdminOOrganizador(ctx)) {
+            ctx.status(403).json(Map.of(
+                    "ok", false,
+                    "mensaje", "No tienes permisos para registrar asistencia"
+            ));
+            return;
+        }
+
+        Map<?, ?> body = ctx.bodyAsClass(Map.class);
+        String token = body.get("token") != null ? body.get("token").toString() : null;
+
+        if (token == null || token.trim().isEmpty()) {
+            ctx.status(400).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Token inválido"
+            ));
+            return;
+        }
+
+        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
+            session.beginTransaction();
+
+            Inscripcion inscripcion = session.createQuery(
+                            "FROM Inscripcion i WHERE i.tokenQr = :token",
+                            Inscripcion.class
+                    )
                     .setParameter("token", token)
                     .uniqueResult();
 
             if (inscripcion == null) {
-                ctx.json(Map.of("ok", false, "mensaje", "Código QR no reconocido."));
+                rollbackIfActive(session);
+                ctx.json(Map.of(
+                        "ok", false,
+                        "mensaje", "Código QR no reconocido."
+                ));
                 return;
             }
 
             if (inscripcion.isAsistio()) {
-                ctx.json(Map.of("ok", false, "mensaje", "Este QR ya fue escaneado anteriormente."));
+                rollbackIfActive(session);
+                ctx.json(Map.of(
+                        "ok", false,
+                        "mensaje", "Este QR ya fue escaneado anteriormente."
+                ));
                 return;
             }
 
@@ -388,56 +564,51 @@ public class Main {
             session.merge(inscripcion);
             session.getTransaction().commit();
 
-            ctx.json(Map.of("ok", true, "mensaje", "Asistencia registrada para: " + inscripcion.getNombre()));
+            ctx.json(Map.of(
+                    "ok", true,
+                    "mensaje", "Asistencia registrada para: " + inscripcion.getNombre()
+            ));
+
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("ok", false, "mensaje", "Error en BD: " + e.getMessage()));
+            ctx.status(500).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Error en BD: " + e.getMessage()
+            ));
         }
     }
 
-    // Elimina una inscripción si el estudiante cancela
-    private static void cancelarInscripcion(Context ctx) {
-        Long idInscripcion = Long.valueOf(ctx.pathParam("id"));
-
-        try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-            session.beginTransaction();
-            Inscripcion inscripcion = session.get(Inscripcion.class, idInscripcion);
-
-            if (inscripcion != null) {
-                Evento evento = inscripcion.getEvento();
-                evento.setInscritos(Math.max(0, evento.getInscritos() - 1));
-
-                session.merge(evento);
-                session.remove(inscripcion);
-                session.getTransaction().commit();
-
-                ctx.json(Map.of("ok", true, "mensaje", "Inscripción cancelada."));
-            } else {
-                ctx.status(404).json(Map.of("ok", false, "mensaje", "Inscripción no encontrada."));
-            }
-        } catch (Exception e) {
-            ctx.status(500).json(Map.of("ok", false, "mensaje", "Error: " + e.getMessage()));
-        }
-    }
-
-    // Devuelve los datos JSON para Chart.js o Google Charts
     private static void obtenerEstadisticas(Context ctx) {
+        if (!esAdminOOrganizador(ctx)) {
+            ctx.status(403).json(Map.of(
+                    "ok", false,
+                    "mensaje", "No tienes permisos para ver estadísticas"
+            ));
+            return;
+        }
+
         Long idEvento = Long.valueOf(ctx.pathParam("id"));
 
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             Evento evento = session.get(Evento.class, idEvento);
 
             if (evento == null) {
-                ctx.status(404).json(Map.of("ok", false, "mensaje", "Evento no encontrado."));
+                ctx.status(404).json(Map.of(
+                        "ok", false,
+                        "mensaje", "Evento no encontrado."
+                ));
                 return;
             }
 
-            Long totalAsistentes = session.createQuery("SELECT COUNT(i) FROM Inscripcion i WHERE i.evento.id = :eventoId AND i.asistio = true", Long.class)
+            Long totalAsistentes = session.createQuery(
+                            "SELECT COUNT(i) FROM Inscripcion i WHERE i.evento.id = :eventoId AND i.asistio = true",
+                            Long.class
+                    )
                     .setParameter("eventoId", idEvento)
                     .uniqueResult();
 
             int inscritos = evento.getInscritos();
-            long asistentes = (totalAsistentes != null) ? totalAsistentes : 0;
-            double porcentaje = (inscritos > 0) ? ((double) asistentes / inscritos) * 100 : 0.0;
+            long asistentes = totalAsistentes != null ? totalAsistentes : 0L;
+            double porcentaje = inscritos > 0 ? ((double) asistentes / inscritos) * 100 : 0.0;
 
             ctx.json(Map.of(
                     "ok", true,
@@ -447,21 +618,49 @@ public class Main {
                     "porcentajeAsistencia", String.format("%.2f%%", porcentaje)
             ));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of("ok", false, "mensaje", "Error: " + e.getMessage()));
+            ctx.status(500).json(Map.of(
+                    "ok", false,
+                    "mensaje", "Error: " + e.getMessage()
+            ));
         }
     }
 
     private static void crearAdminPorDefecto() {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             session.beginTransaction();
-            Long totalAdmins = session.createQuery("SELECT COUNT(u) FROM Usuario u WHERE u.rol = 'ADMINISTRADOR'", Long.class).uniqueResult();
 
-            if (totalAdmins == 0) {
-                Usuario admin = new Usuario("admin@pucmm.edu.do", "admin123", "ADMINISTRADOR");
-                session.persist(admin);
+            Usuario admin = session.createQuery(
+                            "FROM Usuario u WHERE u.correo = :correo",
+                            Usuario.class
+                    )
+                    .setParameter("correo", "admin@pucmm.edu.do")
+                    .uniqueResult();
+
+            if (admin == null) {
+                Usuario nuevoAdmin = new Usuario(
+                        "admin@pucmm.edu.do",
+                        "admin",
+                        "admin123",
+                        "ADMINISTRADOR"
+                );
+                session.persist(nuevoAdmin);
                 System.out.println("✅ Administrador creado automáticamente.");
+            } else {
+                boolean actualizado = false;
+
+                if (admin.getUsername() == null || admin.getUsername().isEmpty()) {
+                    admin.setUsername("admin");
+                    actualizado = true;
+                }
+
+                if (actualizado) {
+                    session.merge(admin);
+                    System.out.println("✅ Username del admin actualizado.");
+                }
             }
+
             session.getTransaction().commit();
+
         } catch (Exception e) {
             System.err.println("Error en BD: " + e.getMessage());
         }
@@ -509,8 +708,41 @@ public class Main {
             }
 
             session.getTransaction().commit();
+
         } catch (Exception e) {
             System.err.println("Error creando eventos de prueba: " + e.getMessage());
+        }
+    }
+
+    private static Map<String, Object> construirUsuarioModelo(Context ctx) {
+        Map<String, Object> usuario = new HashMap<>();
+        usuario.put("id", ctx.sessionAttribute("usuarioId"));
+        usuario.put("correo", ctx.sessionAttribute("usuarioCorreo"));
+        usuario.put("username", ctx.sessionAttribute("usuarioUsername"));
+        usuario.put("rol", ctx.sessionAttribute("usuarioRol"));
+        return usuario;
+    }
+
+    private static boolean usuarioLogueado(Context ctx) {
+        return ctx.sessionAttribute("usuarioId") != null;
+    }
+
+    private static boolean esAdmin(Context ctx) {
+        String rol = ctx.sessionAttribute("usuarioRol");
+        return "ADMINISTRADOR".equals(rol);
+    }
+
+    private static boolean esAdminOOrganizador(Context ctx) {
+        String rol = ctx.sessionAttribute("usuarioRol");
+        return "ADMINISTRADOR".equals(rol) || "ORGANIZADOR".equals(rol);
+    }
+
+    private static void rollbackIfActive(Session session) {
+        try {
+            if (session.getTransaction() != null && session.getTransaction().isActive()) {
+                session.getTransaction().rollback();
+            }
+        } catch (Exception ignored) {
         }
     }
 }

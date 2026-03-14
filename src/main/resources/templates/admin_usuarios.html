@@ -13,7 +13,7 @@
   <div class="container-fluid">
     <a class="navbar-brand" href="/eventos">Panel de Control PUCMM</a>
     <div class="d-flex align-items-center">
-      <span class="text-white me-3">Hola, ${usuario.correo} (${usuario.rol})</span>
+      <span class="text-white me-3">Hola, ${usuario.username!usuario.correo} (${usuario.rol})</span>
       <a href="/logout" class="btn btn-outline-light btn-sm">Cerrar Sesión</a>
     </div>
   </div>
@@ -29,6 +29,7 @@
         <tr>
           <th>ID</th>
           <th>Correo</th>
+          <th>Username</th>
           <th>Rol Actual</th>
           <th>Estado</th>
           <th>Acciones</th>
@@ -39,35 +40,39 @@
         <tr>
           <td>${u.id}</td>
           <td>${u.correo}</td>
+          <td>${u.username!'-'}</td>
           <td>
             <form method="POST" action="/admin/usuarios/rol/${u.id}" class="d-flex gap-2">
-              <select name="rol" class="form-select form-select-sm" style="width: 150px;">
-                <option value="PARTICIPANTE" <#if u.rol == 'PARTICIPANTE'>selected</#if>>Participante</option>
-              <option value="ORGANIZADOR" <#if u.rol == 'ORGANIZADOR'>selected</#if>>Organizador</option>
-            <option value="ADMINISTRADOR" <#if u.rol == 'ADMINISTRADOR'>selected</#if>>Administrador</option>
-          </select>
-          <button type="submit" class="btn btn-primary btn-sm" <#if u.rol == 'ADMINISTRADOR'>disabled</#if>>Guardar</button>
-        </form>
-        </td>
-        <td>
-                            <span class="badge ${u.bloqueado?then('bg-danger', 'bg-success')}">
-                                ${u.bloqueado?then('Bloqueado', 'Activo')}
+              <select name="rol" class="form-select form-select-sm" style="width: 170px;" <#if u.rol == 'ADMINISTRADOR'>disabled</#if>>
+            <option value="PARTICIPANTE" <#if u.rol == 'PARTICIPANTE'>selected</#if>>Participante</option>
+          <option value="ORGANIZADOR" <#if u.rol == 'ORGANIZADOR'>selected</#if>>Organizador</option>
+        <option value="ADMINISTRADOR" <#if u.rol == 'ADMINISTRADOR'>selected</#if>>Administrador</option>
+        </select>
+        <button type="submit" class="btn btn-primary btn-sm" <#if u.rol == 'ADMINISTRADOR'>disabled</#if>>
+      Guardar
+      </button>
+      </form>
+      </td>
+      <td>
+                            <span class="badge ${u.bloqueado?string('bg-danger', 'bg-success')}">
+                                ${u.bloqueado?string('Bloqueado', 'Activo')}
                             </span>
-        </td>
-        <td>
-          <form method="POST" action="/admin/usuarios/bloquear/${u.id}">
-            <button type="submit" class="btn ${u.bloqueado?then('btn-success', 'btn-danger')} btn-sm"
-            <#if u.rol == 'ADMINISTRADOR'>disabled</#if>>
-          ${u.bloqueado?then('Desbloquear', 'Bloquear')}
-          </button>
-          </form>
-        </td>
-        </tr>
-        </#list>
-        </tbody>
-      </table>
-    </div>
+      </td>
+      <td>
+        <form method="POST" action="/admin/usuarios/bloquear/${u.id}">
+          <button type="submit"
+                  class="btn ${u.bloqueado?string('btn-success', 'btn-danger')} btn-sm"
+          <#if u.rol == 'ADMINISTRADOR'>disabled</#if>>
+        ${u.bloqueado?string('Desbloquear', 'Bloquear')}
+        </button>
+        </form>
+      </td>
+      </tr>
+    </#list>
+    </tbody>
+    </table>
   </div>
+</div>
 </div>
 
 </body>
