@@ -226,13 +226,14 @@ public class Main {
                 String titulo = ctx.formParam("titulo");
                 String descripcion = ctx.formParam("descripcion");
                 String fecha = ctx.formParam("fecha");
+                String hora = ctx.formParam("hora");
                 String lugar = ctx.formParam("lugar");
                 int cupoMaximo = Integer.parseInt(ctx.formParam("cupoMaximo"));
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
 
-                    Evento nuevoEvento = new Evento(titulo, descripcion, fecha, lugar, cupoMaximo);
+                    Evento nuevoEvento = new Evento(titulo, descripcion, fecha, hora, lugar, cupoMaximo);
                     nuevoEvento.setInscritos(0);
                     nuevoEvento.setPublicado(false);
 
@@ -258,6 +259,7 @@ public class Main {
                         evento.setTitulo(ctx.formParam("titulo"));
                         evento.setDescripcion(ctx.formParam("descripcion"));
                         evento.setFecha(ctx.formParam("fecha"));
+                        evento.setHora(ctx.formParam("hora"));
                         evento.setLugar(ctx.formParam("lugar"));
                         evento.setCupoMaximo(Integer.parseInt(ctx.formParam("cupoMaximo")));
                         session.merge(evento);
@@ -539,11 +541,13 @@ public class Main {
 
             session.getTransaction().commit();
 
+            Long usuarioId = ctx.sessionAttribute("usuarioId");
+
             ctx.json(Map.of(
                     "ok", true,
                     "mensaje", "Inscripción realizada correctamente",
                     "eventoId", evento.getId(),
-                    "correo", inscripcion.getCorreo(),
+                    "usuarioId", usuarioId,
                     "token", inscripcion.getTokenQr(),
                     "inscritos", evento.getInscritos()
             ));
@@ -879,6 +883,7 @@ public class Main {
                 e1.setTitulo("Charla de Java Web");
                 e1.setDescripcion("Introducción a Javalin y Thymeleaf");
                 e1.setFecha("2026-03-20");
+                e1.setHora("10:00");
                 e1.setLugar("Auditorio 1");
                 e1.setCupoMaximo(50);
                 e1.setInscritos(20);
@@ -888,6 +893,7 @@ public class Main {
                 e2.setTitulo("Taller de Docker");
                 e2.setDescripcion("Contenedores y despliegue básico");
                 e2.setFecha("2026-03-22");
+                e2.setHora("14:00");
                 e2.setLugar("Laboratorio 3");
                 e2.setCupoMaximo(30);
                 e2.setInscritos(30);
@@ -897,6 +903,7 @@ public class Main {
                 e3.setTitulo("Conferencia de IA");
                 e3.setDescripcion("Aplicaciones prácticas de inteligencia artificial");
                 e3.setFecha("2026-03-25");
+                e3.setHora("09:00");
                 e3.setLugar("Salón A-12");
                 e3.setCupoMaximo(100);
                 e3.setInscritos(65);

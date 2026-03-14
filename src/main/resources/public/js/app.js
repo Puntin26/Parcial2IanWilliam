@@ -134,7 +134,7 @@ document.addEventListener("DOMContentLoaded", () => {
             actualizarAccionesEvento(data.eventoId, true);
             modalInscripcion.hide();
 
-            mostrarQr(data.eventoId, data.correo, data.token);
+            mostrarQr(data.eventoId, data.usuarioId, data.token);
 
         } catch (error) {
             console.error(error);
@@ -142,12 +142,12 @@ document.addEventListener("DOMContentLoaded", () => {
         }
     });
 
-    function mostrarQr(eventoId, correo, token) {
+    function mostrarQr(eventoId, usuarioId, token) {
         if (!contenedorQr || !textoQr || !modalQr) return;
 
         const contenidoQr = JSON.stringify({
             eventoId: eventoId,
-            correo: correo,
+            usuarioId: usuarioId,
             token: token
         });
 
