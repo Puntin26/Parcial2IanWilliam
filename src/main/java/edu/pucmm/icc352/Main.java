@@ -60,7 +60,14 @@ public class Main {
             // RUTAS DE LOGIN Y SESIÓN
             // ==========================================
             config.routes.get("/login", ctx -> {
-                ctx.render("templates/login.html");
+                Map<String, Object> modelo = new HashMap<>();
+                if ("true".equals(ctx.queryParam("error")))     modelo.put("loginError", true);
+                if ("bloqueado".equals(ctx.queryParam("error"))) {
+                    modelo.put("loginError", true);
+                    modelo.put("errorMensaje", "Tu cuenta ha sido bloqueada.");
+                }
+                if ("true".equals(ctx.queryParam("logout")))    modelo.put("loginLogout", true);
+                ctx.render("templates/login.html", modelo);
             });
 
             config.routes.post("/login", ctx -> {
@@ -74,13 +81,13 @@ public class Main {
 
                     if (usuario != null && usuario.getPassword().equals(password)) {
                         if (usuario.isBloqueado()) {
-                            ctx.status(403).result("Usuario bloqueado. Contacte al administrador.");
+                            ctx.redirect("/login?error=bloqueado");          // ← redirect
                         } else {
                             ctx.sessionAttribute("usuarioActual", usuario);
                             ctx.redirect("/eventos");
                         }
                     } else {
-                        ctx.status(401).result("Credenciales incorrectas");
+                        ctx.redirect("/login?error=true");                   // ← redirect
                     }
                 } catch (Exception e) {
                     ctx.status(500).result("Error en el servidor: " + e.getMessage());
@@ -893,3 +900,7 @@ public class Main {
         }
     }
 }
+
+
+
+

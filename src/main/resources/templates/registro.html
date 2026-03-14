@@ -3,49 +3,415 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Registro de Usuario - Eventos</title>
+    <title>Registro de Usuario - Eventos PUCMM</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="/css/estilos.css">
+    <style>
+        /* ── Fuerza de contraseña ── */
+        .password-strength-bar {
+            height: 4px;
+            border-radius: 2px;
+            transition: width 0.4s ease, background-color 0.4s ease;
+            width: 0%;
+        }
+
+        /* ── Feedback inline ── */
+        .field-feedback {
+            font-size: 0.78rem;
+            min-height: 1.1rem;
+            margin-top: 4px;
+        }
+
+        /* ── Ojo ver contraseña ── */
+        .input-group .btn-eye {
+            border-color: #ced4da;
+            background: transparent;
+            color: #6c757d;
+        }
+        .input-group .btn-eye:hover {
+            background: #f8f9fa;
+            color: #333;
+        }
+        .input-group .form-control:focus + .btn-eye,
+        .input-group .form-control.is-valid + .btn-eye,
+        .input-group .form-control.is-invalid + .btn-eye {
+            border-color: inherit;
+        }
+
+        /* ── Requerimientos de contraseña ── */
+        .req-item {
+            font-size: 0.78rem;
+            transition: color 0.2s;
+        }
+        .req-item.ok { color: #198754; }
+        .req-item.fail { color: #adb5bd; }
+
+        /* ── Logo / encabezado ── */
+        .brand-header {
+            text-align: center;
+            margin-bottom: 1.5rem;
+        }
+        .brand-header .brand-icon {
+            font-size: 2.2rem;
+            line-height: 1;
+        }
+        .brand-header h2 {
+            font-size: 1.4rem;
+            font-weight: 700;
+            margin: 0.4rem 0 0.2rem;
+        }
+
+        /* ── Spinner botón ── */
+        .btn-submit-spinner { display: none; }
+        .loading .btn-submit-text { display: none; }
+        .loading .btn-submit-spinner { display: inline-block; }
+    </style>
 </head>
 <body class="d-flex align-items-center py-4 bg-body-tertiary" style="min-height: 100vh;">
 
-<main class="form-signin w-100 m-auto" style="max-width: 420px;">
+<main class="w-100 m-auto px-3" style="max-width: 440px;">
     <div class="card sombra-suave p-4">
-        <h2 class="text-center mb-3">Crear cuenta</h2>
-        <p class="text-muted text-center mb-4">Regístrate como participante para inscribirte en eventos.</p>
 
+        <!-- Encabezado de marca -->
+        <div class="brand-header">
+            <div class="brand-icon">🎓</div>
+            <h2>Crear cuenta</h2>
+            <p class="text-muted small mb-0">Regístrate para inscribirte en eventos PUCMM</p>
+        </div>
+
+        <!-- Alertas del servidor -->
         <#if error??>
-        <div class="alert alert-danger">${error}</div>
+        <div class="alert alert-danger alert-dismissible fade show py-2" role="alert">
+            <small>${error}</small>
+            <button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button>
+        </div>
     </#if>
 
     <#if exito??>
-    <div class="alert alert-success">${exito}</div>
+    <div class="alert alert-success alert-dismissible fade show py-2" role="alert">
+        <small>${exito}</small>
+        <button type="button" class="btn-close btn-sm" data-bs-dismiss="alert"></button>
+    </div>
 </#if>
 
-<form method="POST" action="/registro">
+<!-- Formulario -->
+<form method="POST" action="/registro" id="formRegistro" novalidate>
+
+    <!-- Correo -->
     <div class="mb-3">
-        <label for="correo" class="form-label">Correo Electrónico</label>
-        <input type="email" class="form-control" id="correo" name="correo" required>
+        <label for="correo" class="form-label fw-semibold">
+            Correo electrónico <span class="text-danger">*</span>
+        </label>
+        <input
+                type="email"
+                class="form-control"
+                id="correo"
+                name="correo"
+                placeholder="tucorreo@pucmm.edu.do"
+                autocomplete="email"
+                aria-describedby="correoFeedback"
+                required
+        >
+        <div class="field-feedback text-danger" id="correoFeedback"></div>
     </div>
 
+    <!-- Username -->
     <div class="mb-3">
-        <label for="username" class="form-label">Username</label>
-        <input type="text" class="form-control" id="username" name="username" required>
+        <label for="username" class="form-label fw-semibold">
+            Nombre de usuario <span class="text-danger">*</span>
+        </label>
+        <input
+                type="text"
+                class="form-control"
+                id="username"
+                name="username"
+                placeholder="Ej: juan.perez"
+                autocomplete="username"
+                minlength="3"
+                maxlength="30"
+                aria-describedby="usernameFeedback"
+                required
+        >
+        <div class="field-feedback text-danger" id="usernameFeedback"></div>
     </div>
 
-    <div class="mb-4">
-        <label for="password" class="form-label">Contraseña</label>
-        <input type="password" class="form-control" id="password" name="password" required>
+    <!-- Contraseña -->
+    <div class="mb-1">
+        <label for="password" class="form-label fw-semibold">
+            Contraseña <span class="text-danger">*</span>
+        </label>
+        <div class="input-group">
+            <input
+                    type="password"
+                    class="form-control"
+                    id="password"
+                    name="password"
+                    placeholder="Mínimo 8 caracteres"
+                    autocomplete="new-password"
+                    aria-describedby="passwordFeedback passwordReqs"
+                    required
+            >
+            <button type="button" class="btn btn-eye border-start-0" id="togglePassword" tabindex="-1" aria-label="Mostrar contraseña">
+                👁
+            </button>
+        </div>
+
+        <!-- Barra de fortaleza -->
+        <div class="mt-2 mb-1">
+            <div class="bg-light rounded" style="height:4px;">
+                <div class="password-strength-bar rounded" id="strengthBar"></div>
+            </div>
+            <small class="text-muted" id="strengthLabel"></small>
+        </div>
+
+        <!-- Requisitos -->
+        <div id="passwordReqs" class="mt-1 ps-1">
+            <div class="req-item fail" id="req-length">● Mínimo 8 caracteres</div>
+            <div class="req-item fail" id="req-upper">● Al menos una mayúscula</div>
+            <div class="req-item fail" id="req-number">● Al menos un número</div>
+        </div>
+        <div class="field-feedback text-danger" id="passwordFeedback"></div>
     </div>
 
-    <button class="btn btn-success w-100 py-2" type="submit">Registrarme</button>
+    <!-- Confirmar contraseña -->
+    <div class="mb-4 mt-3">
+        <label for="confirmarPassword" class="form-label fw-semibold">
+            Confirmar contraseña <span class="text-danger">*</span>
+        </label>
+        <div class="input-group">
+            <input
+                    type="password"
+                    class="form-control"
+                    id="confirmarPassword"
+                    name="confirmarPassword"
+                    placeholder="Repite tu contraseña"
+                    autocomplete="new-password"
+                    aria-describedby="confirmarFeedback"
+                    required
+            >
+            <button type="button" class="btn btn-eye border-start-0" id="toggleConfirmar" tabindex="-1" aria-label="Mostrar confirmación">
+                👁
+            </button>
+        </div>
+        <div class="field-feedback" id="confirmarFeedback"></div>
+    </div>
+
+    <!-- Botón enviar -->
+    <button class="btn btn-success w-100 py-2 fw-semibold" type="submit" id="btnRegistrar">
+        <span class="btn-submit-text">Crear mi cuenta</span>
+        <span class="btn-submit-spinner spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+    </button>
+
 </form>
 
-<div class="text-center mt-3">
-    <a href="/login">Ya tengo cuenta</a>
+<hr class="my-3">
+
+<div class="text-center small">
+    ¿Ya tienes cuenta?
+    <a href="/login" class="fw-semibold text-decoration-none">Iniciar sesión</a>
 </div>
+
 </div>
 </main>
 
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+    (function () {
+        /* ── Elementos ── */
+        const correoInput     = document.getElementById('correo');
+        const usernameInput   = document.getElementById('username');
+        const passwordInput   = document.getElementById('password');
+        const confirmarInput  = document.getElementById('confirmarPassword');
+        const strengthBar     = document.getElementById('strengthBar');
+        const strengthLabel   = document.getElementById('strengthLabel');
+        const btnRegistrar    = document.getElementById('btnRegistrar');
+        const form            = document.getElementById('formRegistro');
+
+        /* ──────────────────────────────────────
+           Toggle ver/ocultar contraseñas
+        ────────────────────────────────────── */
+        function makeToggle(btnId, inputEl) {
+            document.getElementById(btnId).addEventListener('click', function () {
+                const isText = inputEl.type === 'text';
+                inputEl.type = isText ? 'password' : 'text';
+                this.textContent = isText ? '👁' : '🙈';
+            });
+        }
+        makeToggle('togglePassword',  passwordInput);
+        makeToggle('toggleConfirmar', confirmarInput);
+
+        /* ──────────────────────────────────────
+           Fortaleza de contraseña
+        ────────────────────────────────────── */
+        const levels = [
+            { label: '',          color: '',          width: '0%'   },
+            { label: 'Muy débil', color: '#dc3545',   width: '20%'  },
+            { label: 'Débil',     color: '#fd7e14',   width: '40%'  },
+            { label: 'Regular',   color: '#ffc107',   width: '60%'  },
+            { label: 'Fuerte',    color: '#20c997',   width: '80%'  },
+            { label: 'Muy fuerte',color: '#198754',   width: '100%' },
+        ];
+
+        function calcStrength(pwd) {
+            if (!pwd) return 0;
+            let score = 1;
+            if (pwd.length >= 8)  score++;
+            if (/[A-Z]/.test(pwd)) score++;
+            if (/[0-9]/.test(pwd)) score++;
+            if (/[^A-Za-z0-9]/.test(pwd)) score++;
+            return Math.min(score, 5);
+        }
+
+        passwordInput.addEventListener('input', function () {
+            const pwd   = this.value;
+            const score = calcStrength(pwd);
+            const lvl   = levels[score];
+
+            strengthBar.style.width           = lvl.width;
+            strengthBar.style.backgroundColor = lvl.color;
+            strengthLabel.textContent         = lvl.label;
+            strengthLabel.style.color         = lvl.color;
+
+            /* Requisitos visuales */
+            toggle('req-length', pwd.length >= 8);
+            toggle('req-upper',  /[A-Z]/.test(pwd));
+            toggle('req-number', /[0-9]/.test(pwd));
+
+            /* Si ya tocaron confirmar, re-validar */
+            if (confirmarInput.value) validateConfirmar();
+        });
+
+        function toggle(id, ok) {
+            const el = document.getElementById(id);
+            el.classList.toggle('ok',   ok);
+            el.classList.toggle('fail', !ok);
+        }
+
+        /* ──────────────────────────────────────
+           Validación correo
+        ────────────────────────────────────── */
+        correoInput.addEventListener('blur', function () {
+            const fb = document.getElementById('correoFeedback');
+            if (!this.value) {
+                setInvalid(this, fb, 'El correo es obligatorio.');
+            } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(this.value)) {
+                setInvalid(this, fb, 'Ingresa un correo válido.');
+            } else {
+                setValid(this, fb);
+            }
+        });
+
+        /* ──────────────────────────────────────
+           Validación username
+        ────────────────────────────────────── */
+        usernameInput.addEventListener('input', function () {
+            /* Solo permitir letras, números, punto y guion bajo */
+            this.value = this.value.replace(/[^a-zA-Z0-9._]/g, '');
+        });
+
+        usernameInput.addEventListener('blur', function () {
+            const fb = document.getElementById('usernameFeedback');
+            if (!this.value) {
+                setInvalid(this, fb, 'El nombre de usuario es obligatorio.');
+            } else if (this.value.length < 3) {
+                setInvalid(this, fb, 'Debe tener al menos 3 caracteres.');
+            } else {
+                setValid(this, fb);
+            }
+        });
+
+        /* ──────────────────────────────────────
+           Validación confirmar contraseña
+        ────────────────────────────────────── */
+        function validateConfirmar() {
+            const fb = document.getElementById('confirmarFeedback');
+            if (!confirmarInput.value) {
+                setInvalid(confirmarInput, fb, 'Debes confirmar tu contraseña.');
+                return false;
+            }
+            if (confirmarInput.value !== passwordInput.value) {
+                setInvalid(confirmarInput, fb, 'Las contraseñas no coinciden.', 'text-danger');
+                return false;
+            }
+            setValid(confirmarInput, fb, '✔ Las contraseñas coinciden', 'text-success');
+            return true;
+        }
+        confirmarInput.addEventListener('input', validateConfirmar);
+
+        /* ──────────────────────────────────────
+           Validación contraseña al salir
+        ────────────────────────────────────── */
+        passwordInput.addEventListener('blur', function () {
+            const fb = document.getElementById('passwordFeedback');
+            if (!this.value) {
+                setInvalid(this, fb, 'La contraseña es obligatoria.');
+            } else if (this.value.length < 8) {
+                setInvalid(this, fb, 'Debe tener mínimo 8 caracteres.');
+            } else {
+                setValid(this, fb);
+            }
+        });
+
+        /* ──────────────────────────────────────
+           Envío del formulario
+        ────────────────────────────────────── */
+        form.addEventListener('submit', function (e) {
+            let valid = true;
+
+            /* Correo */
+            const correoFb = document.getElementById('correoFeedback');
+            if (!correoInput.value || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(correoInput.value)) {
+                setInvalid(correoInput, correoFb, 'Ingresa un correo válido.');
+                valid = false;
+            }
+
+            /* Username */
+            const userFb = document.getElementById('usernameFeedback');
+            if (!usernameInput.value || usernameInput.value.length < 3) {
+                setInvalid(usernameInput, userFb, 'El nombre de usuario es inválido.');
+                valid = false;
+            }
+
+            /* Contraseña */
+            const pwdFb = document.getElementById('passwordFeedback');
+            if (!passwordInput.value || passwordInput.value.length < 8) {
+                setInvalid(passwordInput, pwdFb, 'La contraseña debe tener mínimo 8 caracteres.');
+                valid = false;
+            }
+
+            /* Confirmar */
+            if (!validateConfirmar()) valid = false;
+
+            if (!valid) {
+                e.preventDefault();
+                /* Scroll al primer error */
+                const firstInvalid = form.querySelector('.is-invalid');
+                if (firstInvalid) firstInvalid.focus();
+                return;
+            }
+
+            /* Estado de carga */
+            btnRegistrar.classList.add('loading');
+            btnRegistrar.disabled = true;
+        });
+
+        /* ──────────────────────────────────────
+           Helpers
+        ────────────────────────────────────── */
+        function setInvalid(input, fb, msg, colorClass = 'text-danger') {
+            input.classList.add('is-invalid');
+            input.classList.remove('is-valid');
+            fb.className = 'field-feedback ' + colorClass;
+            fb.textContent = msg;
+        }
+
+        function setValid(input, fb, msg = '', colorClass = '') {
+            input.classList.remove('is-invalid');
+            input.classList.add('is-valid');
+            fb.className = 'field-feedback ' + colorClass;
+            fb.textContent = msg;
+        }
+    })();
+</script>
 </body>
 </html>
