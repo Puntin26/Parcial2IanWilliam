@@ -15,18 +15,15 @@
     <p class="text-muted text-center mb-4">Accede para ver los eventos académicos.</p>
 
     <#if error??>
-    <div class="alert alert-danger">${error}</div>
+    <div class="alert alert-danger" role="alert">
+      ${error}
+    </div>
   </#if>
 
-  <form method="POST" action="/login">
+  <form id="formLogin" method="POST" action="/login">
     <div class="mb-3">
       <label for="correo" class="form-label">Correo Electrónico</label>
       <input type="email" class="form-control" id="correo" name="correo" required>
-    </div>
-
-    <div class="mb-3">
-      <label for="username" class="form-label">Username</label>
-      <input type="text" class="form-control" id="username" name="username" required>
     </div>
 
     <div class="mb-4">
@@ -36,11 +33,30 @@
 
     <button class="btn btn-primary w-100 py-2" type="submit">Entrar</button>
   </form>
+
   <div class="text-center mt-3">
-    <a href="/registro">¿No tienes cuenta? Regístrate</a>
+    <a href="/registro" class="text-decoration-none">¿No tienes cuenta? Regístrate</a>
   </div>
   </div>
 </main>
+
+<script>
+  document.getElementById('formLogin').addEventListener('submit', function(e) {
+    const correo = document.getElementById('correo').value;
+    const password = document.getElementById('password').value;
+
+    if (correo.trim() === '' || password.trim() === '') {
+      e.preventDefault();
+      alert('Todos los campos son obligatorios.');
+      return;
+    }
+
+    if (password.length < 4) {
+      e.preventDefault();
+      alert('La contraseña debe ser mayor a 4 caracteres.');
+    }
+  });
+</script>
 
 </body>
 </html>

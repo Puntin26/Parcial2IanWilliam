@@ -140,12 +140,13 @@ public class Main {
                 String titulo = ctx.formParam("titulo");
                 String descripcion = ctx.formParam("descripcion");
                 String fecha = ctx.formParam("fecha");
+                String hora = ctx.formParam("hora");
                 String lugar = ctx.formParam("lugar");
                 int cupoMaximo = Integer.parseInt(ctx.formParam("cupoMaximo"));
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
-                    Evento nuevoEvento = new Evento(titulo, descripcion, fecha, lugar, cupoMaximo);
+                    Evento nuevoEvento = new Evento(titulo, descripcion, fecha, hora, lugar, cupoMaximo);
                     nuevoEvento.setInscritos(0);
                     nuevoEvento.setPublicado(false);
                     session.persist(nuevoEvento);
@@ -170,6 +171,10 @@ public class Main {
                         evento.setTitulo(ctx.formParam("titulo"));
                         evento.setDescripcion(ctx.formParam("descripcion"));
                         evento.setFecha(ctx.formParam("fecha"));
+
+                        // 👇 ESTA ES LA LÍNEA QUE FALTABA 👇
+                        evento.setHora(ctx.formParam("hora"));
+
                         evento.setLugar(ctx.formParam("lugar"));
                         evento.setCupoMaximo(Integer.parseInt(ctx.formParam("cupoMaximo")));
                         session.merge(evento);
@@ -457,7 +462,7 @@ public class Main {
             Long totalAdmins = session.createQuery("SELECT COUNT(u) FROM Usuario u WHERE u.rol = 'ADMINISTRADOR'", Long.class).uniqueResult();
 
             if (totalAdmins == 0) {
-                Usuario admin = new Usuario("admin@pucmm.edu.do", "admin123", "ADMINISTRADOR");
+                Usuario admin = new Usuario("admin@pucmm.edu.do", "admin", "admin123", "ADMINISTRADOR");
                 session.persist(admin);
                 System.out.println("✅ Administrador creado automáticamente.");
             }

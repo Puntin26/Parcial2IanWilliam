@@ -243,4 +243,77 @@ document.addEventListener("DOMContentLoaded", () => {
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;");
     }
+
+    document.addEventListener("DOMContentLoaded", function() {
+
+        // ==========================================
+        // VALIDACIONES: CREAR Y EDITAR EVENTOS
+        // ==========================================
+        // Seleccionamos todos los formularios que vayan a crear o editar
+        const formEventos = document.querySelectorAll('form[action^="/admin/eventos/crear"], form[action^="/admin/eventos/editar"]');
+
+        formEventos.forEach(form => {
+            form.addEventListener('submit', function(event) {
+                // Obtenemos los valores
+                const titulo = form.querySelector('input[name="titulo"]').value.trim();
+                const descripcion = form.querySelector('textarea[name="descripcion"]').value.trim();
+                const cupo = form.querySelector('input[name="cupoMaximo"]').value;
+                const fecha = form.querySelector('input[name="fecha"]').value;
+
+                // 1. Validar espacios en blanco
+                if (titulo === "" || descripcion === "") {
+                    alert("⚠️ El título y la descripción no pueden estar vacíos ni ser solo espacios.");
+                    event.preventDefault(); // Detiene el envío
+                    return;
+                }
+
+                // 2. Validar que el cupo sea lógico (mayor a 0)
+                if (cupo < 1) {
+                    alert("⚠️ El cupo máximo debe ser de al menos 1 persona.");
+                    event.preventDefault();
+                    return;
+                }
+
+                // 3. Validar que la fecha no esté en el pasado (Solo al CREAR, al editar permitimos fechas pasadas por historial)
+                if (form.getAttribute('action') === '/admin/eventos/crear') {
+                    const fechaSeleccionada = new Date(fecha);
+                    const hoy = new Date();
+                    hoy.setHours(0, 0, 0, 0); // Limpiamos la hora para comparar solo fechas completas
+
+                    // Ajustamos la zona horaria para evitar que el navegador reste un día
+                    const fechaAjustada = new Date(fechaSeleccionada.getTime() + fechaSeleccionada.getTimezoneOffset() * 60000);
+
+                    if (fechaAjustada < hoy) {
+                        alert("⚠️ No puedes crear un evento con una fecha que ya pasó.");
+                        event.preventDefault();
+                        return;
+                    }
+                }
+            });
+        });
+
+        // ==========================================
+        // VALIDACIONES: LOGIN Y REGISTRO
+        // ==========================================
+        // Busca un formulario que tenga el id="formLogin" (Asegúrate de ponérselo a tu form en login.html)
+        const formLogin = document.getElementById('formLogin');
+        if (formLogin) {
+            formLogin.addEventListener('submit', function(event) {
+                const password = formLogin.querySelector('input[name="password"]').value.trim();
+                const correo = formLogin.querySelector('input[name="correo"]').value.trim();
+
+                if (correo === "") {
+                    alert("⚠️ Por favor, ingresa tu correo.");
+                    event.preventDefault();
+                    return;
+                }
+
+                if (password.length < 4) {
+                    alert("⚠️ La contraseña debe tener al menos 4 caracteres.");
+                    event.preventDefault();
+                }
+            });
+        }
+
+    });
 });
