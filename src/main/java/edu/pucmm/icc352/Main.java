@@ -11,7 +11,6 @@ import org.hibernate.Session;
 import freemarker.template.Configuration;
 import freemarker.template.Template;
 
-import java.io.File;
 import java.io.StringWriter;
 import java.sql.SQLException;
 import java.util.HashMap;
@@ -34,13 +33,9 @@ public class Main {
         Javalin app = Javalin.create(config -> {
             config.staticFiles.add("/public");
 
-            // Configurar Freemarker para renderizar templates
+            // ✅ CAMBIO: usa classpath en lugar de ruta de disco (funciona en Docker)
             Configuration fmConfig = new Configuration(Configuration.VERSION_2_3_32);
-            try {
-                fmConfig.setDirectoryForTemplateLoading(new File("src/main/resources"));
-            } catch (Exception e) {
-                System.err.println("Error configurando Freemarker: " + e.getMessage());
-            }
+            fmConfig.setClassLoaderForTemplateLoading(Main.class.getClassLoader(), "/");
 
             config.fileRenderer((filePath, model, _) -> {
                 try {
@@ -61,17 +56,17 @@ public class Main {
             // ==========================================
             config.routes.get("/login", ctx -> {
                 Map<String, Object> modelo = new HashMap<>();
-                if ("true".equals(ctx.queryParam("error")))     modelo.put("loginError", true);
+                if ("true".equals(ctx.queryParam("error")))      modelo.put("loginError", true);
                 if ("bloqueado".equals(ctx.queryParam("error"))) {
                     modelo.put("loginError", true);
                     modelo.put("errorMensaje", "Tu cuenta ha sido bloqueada.");
                 }
-                if ("true".equals(ctx.queryParam("logout")))    modelo.put("loginLogout", true);
+                if ("true".equals(ctx.queryParam("logout")))     modelo.put("loginLogout", true);
                 ctx.render("templates/login.html", modelo);
             });
 
             config.routes.post("/login", ctx -> {
-                String correo = ctx.formParam("correo");
+                String correo   = ctx.formParam("correo");
                 String password = ctx.formParam("password");
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
@@ -81,26 +76,25 @@ public class Main {
 
                     if (usuario != null && usuario.getPassword().equals(password)) {
                         if (usuario.isBloqueado()) {
-                            ctx.redirect("/login?error=bloqueado");          // ← redirect
+                            ctx.redirect("/login?error=bloqueado");
                         } else {
                             ctx.sessionAttribute("usuarioActual", usuario);
                             ctx.redirect("/eventos");
                         }
                     } else {
-                        ctx.redirect("/login?error=true");                   // ← redirect
+                        ctx.redirect("/login?error=true");
                     }
                 } catch (Exception e) {
                     ctx.status(500).result("Error en el servidor: " + e.getMessage());
                 }
             });
 
-
             config.routes.get("/registro", ctx -> {
                 ctx.render("templates/registro.html");
             });
 
             config.routes.post("/registro", ctx -> {
-                String correo = ctx.formParam("correo");
+                String correo   = ctx.formParam("correo");
                 String username = ctx.formParam("username");
                 String password = ctx.formParam("password");
 
@@ -112,7 +106,6 @@ public class Main {
                 }
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-
                     Usuario usuarioExistente = session.createQuery(
                                     "FROM Usuario WHERE correo = :correo", Usuario.class)
                             .setParameter("correo", correo.trim().toLowerCase())
@@ -124,19 +117,15 @@ public class Main {
                     }
 
                     session.beginTransaction();
-
                     Usuario nuevoUsuario = new Usuario(
                             correo.trim().toLowerCase(),
                             username.trim(),
                             password.trim(),
                             "PARTICIPANTE"
                     );
-
                     nuevoUsuario.setBloqueado(false);
-
                     session.persist(nuevoUsuario);
                     session.getTransaction().commit();
-
                     ctx.redirect("/login");
 
                 } catch (Exception e) {
@@ -152,51 +141,36 @@ public class Main {
             // ==========================================
             // RUTAS DE EVENTOS (Vista general)
             // ==========================================
-
-
             config.routes.get("/eventos", ctx -> {
                 Usuario usuarioSesion = ctx.sessionAttribute("usuarioActual");
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-
                     List<Evento> eventosReales;
 
                     if (usuarioSesion != null &&
                             (usuarioSesion.getRol().equals("ADMINISTRADOR") || usuarioSesion.getRol().equals("ORGANIZADOR"))) {
-
-                        // Admin y organizador ven todo
                         eventosReales = session.createQuery("FROM Evento", Evento.class).list();
-
                     } else {
-                        // Participantes e invitados ven solo eventos publicados
                         eventosReales = session.createQuery(
-                                        "FROM Evento e WHERE e.publicado = true ORDER BY e.fecha ASC",
-                                        Evento.class
-                                )
-                                .list();
+                                "FROM Evento e WHERE e.publicado = true ORDER BY e.fecha ASC",
+                                Evento.class).list();
 
                         java.time.LocalDate hoy = java.time.LocalDate.now();
-
                         eventosReales = eventosReales.stream()
                                 .filter(e -> {
                                     try {
                                         java.time.LocalDate fechaEvento = java.time.LocalDate.parse(e.getFecha());
                                         return fechaEvento.isAfter(hoy) || fechaEvento.isEqual(hoy);
-                                    } catch (Exception ex) {
-                                        return false;
-                                    }
+                                    } catch (Exception ex) { return false; }
                                 })
                                 .filter(e -> e.getTitulo() == null || !e.getTitulo().startsWith("[CANCELADO]"))
                                 .toList();
                     }
 
                     List<Long> eventosInscritosIds = new java.util.ArrayList<>();
-
                     if (usuarioSesion != null) {
                         eventosInscritosIds = session.createQuery(
-                                        "SELECT i.evento.id FROM Inscripcion i WHERE i.correo = :correo",
-                                        Long.class
-                                )
+                                        "SELECT i.evento.id FROM Inscripcion i WHERE i.correo = :correo", Long.class)
                                 .setParameter("correo", usuarioSesion.getCorreo().trim().toLowerCase())
                                 .list();
                     }
@@ -206,7 +180,6 @@ public class Main {
                     modelo.put("eventos", eventosReales);
                     modelo.put("usuario", usuarioSesion);
                     modelo.put("eventosInscritosIds", eventosInscritosIds);
-
                     ctx.render("templates/eventos.html", modelo);
 
                 } catch (Exception e) {
@@ -215,67 +188,51 @@ public class Main {
             });
 
             config.routes.get("/eventos/{id}/resumen", ctx -> {
-
                 Usuario usuario = ctx.sessionAttribute("usuarioActual");
-
                 if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
                     ctx.redirect("/eventos");
                     return;
                 }
-
                 Long idEvento = Long.valueOf(ctx.pathParam("id"));
-
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-
                     Evento evento = session.get(Evento.class, idEvento);
-
-                    if (evento == null) {
-                        ctx.status(404).result("Evento no encontrado");
-                        return;
-                    }
-
+                    if (evento == null) { ctx.status(404).result("Evento no encontrado"); return; }
                     Map<String, Object> modelo = new HashMap<>();
                     modelo.put("usuario", usuario);
                     modelo.put("evento", evento);
-
                     ctx.render("templates/resumen_evento.html", modelo);
                 }
-
             });
 
             // ==========================================
-            // RUTA PARA EL ESCÁNER QR (Solo Admin y Organizador)
+            // RUTA PARA EL ESCÁNER QR
             // ==========================================
             config.routes.get("/escanear", ctx -> {
                 Usuario usuario = ctx.sessionAttribute("usuarioActual");
-
-                // Si no está logueado o es un simple participante, lo pateamos a la lista
                 if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
                     ctx.redirect("/eventos");
                     return;
                 }
-
                 Map<String, Object> modelo = new HashMap<>();
                 modelo.put("usuario", usuario);
                 ctx.render("templates/escanear.html", modelo);
             });
 
             // ==========================================
-            // CRUD DE EVENTOS (Solo Admin y Organizador)
+            // CRUD DE EVENTOS
             // ==========================================
             config.routes.post("/admin/eventos/crear", ctx -> {
                 Usuario usuario = ctx.sessionAttribute("usuarioActual");
                 if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
-                    ctx.status(403).result("Acceso denegado: No tienes permisos para crear eventos.");
+                    ctx.status(403).result("Acceso denegado.");
                     return;
                 }
-
-                String titulo = ctx.formParam("titulo");
+                String titulo      = ctx.formParam("titulo");
                 String descripcion = ctx.formParam("descripcion");
-                String fecha = ctx.formParam("fecha");
-                String hora = ctx.formParam("hora");
-                String lugar = ctx.formParam("lugar");
-                int cupoMaximo = Integer.parseInt(ctx.formParam("cupoMaximo"));
+                String fecha       = ctx.formParam("fecha");
+                String hora        = ctx.formParam("hora");
+                String lugar       = ctx.formParam("lugar");
+                int cupoMaximo     = Integer.parseInt(ctx.formParam("cupoMaximo"));
 
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
@@ -294,20 +251,15 @@ public class Main {
                     ctx.status(403).result("Acceso denegado.");
                     return;
                 }
-
                 Long id = Long.valueOf(ctx.pathParam("id"));
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
                     Evento evento = session.get(Evento.class, id);
-
                     if (evento != null) {
                         evento.setTitulo(ctx.formParam("titulo"));
                         evento.setDescripcion(ctx.formParam("descripcion"));
                         evento.setFecha(ctx.formParam("fecha"));
-
-                        // 👇 ESTA ES LA LÍNEA QUE FALTABA 👇
                         evento.setHora(ctx.formParam("hora"));
-
                         evento.setLugar(ctx.formParam("lugar"));
                         evento.setCupoMaximo(Integer.parseInt(ctx.formParam("cupoMaximo")));
                         session.merge(evento);
@@ -323,24 +275,18 @@ public class Main {
                     ctx.status(403).result("Acceso denegado.");
                     return;
                 }
-
-                Long id = Long.valueOf(ctx.pathParam("id"));
+                Long id       = Long.valueOf(ctx.pathParam("id"));
                 String accion = ctx.formParam("accion");
-
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
                     Evento evento = session.get(Evento.class, id);
-
                     if (evento != null) {
-                        if ("PUBLICAR".equalsIgnoreCase(accion)) {
-                            evento.setPublicado(true);
-                        } else if ("DESPUBLICAR".equalsIgnoreCase(accion)) {
+                        if ("PUBLICAR".equalsIgnoreCase(accion))        evento.setPublicado(true);
+                        else if ("DESPUBLICAR".equalsIgnoreCase(accion)) evento.setPublicado(false);
+                        else if ("CANCELAR".equalsIgnoreCase(accion)) {
                             evento.setPublicado(false);
-                        } else if ("CANCELAR".equalsIgnoreCase(accion)) {
-                            evento.setPublicado(false);
-                            if (!evento.getTitulo().startsWith("[CANCELADO]")) {
+                            if (!evento.getTitulo().startsWith("[CANCELADO]"))
                                 evento.setTitulo("[CANCELADO] " + evento.getTitulo());
-                            }
                         }
                         session.merge(evento);
                     }
@@ -358,7 +304,6 @@ public class Main {
                     ctx.status(403).result("Acceso denegado. Solo administradores.");
                     return;
                 }
-
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     List<Usuario> usuarios = session.createQuery("FROM Usuario", Usuario.class).list();
                     Map<String, Object> modelo = new HashMap<>();
@@ -371,14 +316,11 @@ public class Main {
             config.routes.post("/admin/usuarios/rol/{id}", ctx -> {
                 Usuario admin = ctx.sessionAttribute("usuarioActual");
                 if (admin == null || !admin.getRol().equals("ADMINISTRADOR")) return;
-
-                Long idUsuario = Long.valueOf(ctx.pathParam("id"));
+                Long idUsuario  = Long.valueOf(ctx.pathParam("id"));
                 String nuevoRol = ctx.formParam("rol");
-
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
                     Usuario usuarioTarget = session.get(Usuario.class, idUsuario);
-
                     if (usuarioTarget != null && !usuarioTarget.getRol().equals("ADMINISTRADOR")) {
                         usuarioTarget.setRol(nuevoRol);
                         session.merge(usuarioTarget);
@@ -391,13 +333,10 @@ public class Main {
             config.routes.post("/admin/usuarios/bloquear/{id}", ctx -> {
                 Usuario admin = ctx.sessionAttribute("usuarioActual");
                 if (admin == null || !admin.getRol().equals("ADMINISTRADOR")) return;
-
                 Long idUsuario = Long.valueOf(ctx.pathParam("id"));
-
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
                     Usuario usuarioTarget = session.get(Usuario.class, idUsuario);
-
                     if (usuarioTarget != null && !usuarioTarget.getRol().equals("ADMINISTRADOR")) {
                         usuarioTarget.setBloqueado(!usuarioTarget.isBloqueado());
                         session.merge(usuarioTarget);
@@ -413,13 +352,10 @@ public class Main {
                     ctx.status(403).result("Acceso denegado.");
                     return;
                 }
-
                 Long idEvento = Long.valueOf(ctx.pathParam("id"));
-
                 try (Session session = HibernateUtil.getSessionFactory().openSession()) {
                     session.beginTransaction();
                     Evento eventoTarget = session.get(Evento.class, idEvento);
-
                     if (eventoTarget != null) {
                         session.createMutationQuery("DELETE FROM Inscripcion WHERE evento.id = :eventoId")
                                 .setParameter("eventoId", idEvento)
@@ -432,12 +368,12 @@ public class Main {
             });
 
             // ==========================================
-            // RUTAS DE APIS PARA JAVASCRIPT / FETCH (Persona 2)
+            // APIS PARA JAVASCRIPT / FETCH
             // ==========================================
-            config.routes.post("/api/inscripciones", Main::procesarInscripcion);
-            config.routes.post("/api/asistencia", Main::procesarAsistencia);
+            config.routes.post("/api/inscripciones",        Main::procesarInscripcion);
+            config.routes.post("/api/asistencia",           Main::procesarAsistencia);
             config.routes.delete("/api/inscripciones/{id}", Main::cancelarInscripcion);
-            config.routes.get("/api/estadisticas/{id}", Main::obtenerEstadisticas);
+            config.routes.get("/api/estadisticas/{id}",     Main::obtenerEstadisticas);
 
         }).start(7000);
     }
@@ -448,392 +384,124 @@ public class Main {
 
     private static void procesarInscripcion(Context ctx) {
         Usuario usuario = ctx.sessionAttribute("usuarioActual");
-
         if (usuario == null) {
-            ctx.status(401).json(Map.of(
-                    "ok", false,
-                    "mensaje", "Debe iniciar sesión antes de inscribirse"
-            ));
+            ctx.status(401).json(Map.of("ok", false, "mensaje", "Debe iniciar sesión antes de inscribirse"));
             return;
         }
-
         InscripcionRequest request = ctx.bodyAsClass(InscripcionRequest.class);
-
         if (request.getEventoId() == null) {
-            ctx.status(400).json(Map.of(
-                    "ok", false,
-                    "mensaje", "Evento inválido"
-            ));
+            ctx.status(400).json(Map.of("ok", false, "mensaje", "Evento inválido"));
             return;
         }
-
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             session.beginTransaction();
-
             Evento evento = session.get(Evento.class, Long.valueOf(request.getEventoId()));
-
-            if (evento == null) {
-                session.getTransaction().rollback();
-                ctx.status(404).json(Map.of(
-                        "ok", false,
-                        "mensaje", "El evento no existe"
-                ));
-                return;
-            }
-
-            if (!evento.isPublicado()) {
-                session.getTransaction().rollback();
-                ctx.status(400).json(Map.of(
-                        "ok", false,
-                        "mensaje", "Este evento no está publicado"
-                ));
-                return;
-            }
-
-            if (evento.getTitulo() != null && evento.getTitulo().startsWith("[CANCELADO]")) {
-                session.getTransaction().rollback();
-                ctx.status(400).json(Map.of(
-                        "ok", false,
-                        "mensaje", "No puedes inscribirte en un evento cancelado"
-                ));
-                return;
-            }
-
+            if (evento == null) { session.getTransaction().rollback(); ctx.status(404).json(Map.of("ok", false, "mensaje", "El evento no existe")); return; }
+            if (!evento.isPublicado()) { session.getTransaction().rollback(); ctx.status(400).json(Map.of("ok", false, "mensaje", "Este evento no está publicado")); return; }
+            if (evento.getTitulo() != null && evento.getTitulo().startsWith("[CANCELADO]")) { session.getTransaction().rollback(); ctx.status(400).json(Map.of("ok", false, "mensaje", "No puedes inscribirte en un evento cancelado")); return; }
             java.time.LocalDate fechaEvento;
-            try {
-                fechaEvento = java.time.LocalDate.parse(evento.getFecha());
-            } catch (Exception e) {
-                session.getTransaction().rollback();
-                ctx.status(500).json(Map.of(
-                        "ok", false,
-                        "mensaje", "La fecha del evento no tiene un formato válido"
-                ));
-                return;
-            }
-
-            java.time.LocalDate hoy = java.time.LocalDate.now();
-
-            if (fechaEvento.isBefore(hoy)) {
-                session.getTransaction().rollback();
-                ctx.status(400).json(Map.of(
-                        "ok", false,
-                        "mensaje", "No puedes inscribirte en un evento cuya fecha ya pasó"
-                ));
-                return;
-            }
-
-            if (evento.getInscritos() >= evento.getCupoMaximo()) {
-                session.getTransaction().rollback();
-                ctx.status(400).json(Map.of(
-                        "ok", false,
-                        "mensaje", "El evento ya no tiene cupo disponible"
-                ));
-                return;
-            }
-
-            Inscripcion yaExiste = session.createQuery(
-                            "FROM Inscripcion WHERE evento.id = :eventoId AND correo = :correo",
-                            Inscripcion.class
-                    )
-                    .setParameter("eventoId", evento.getId())
-                    .setParameter("correo", usuario.getCorreo().trim().toLowerCase())
-                    .uniqueResult();
-
-            if (yaExiste != null) {
-                session.getTransaction().rollback();
-                ctx.status(400).json(Map.of(
-                        "ok", false,
-                        "mensaje", "Ya estás inscrito en este evento"
-                ));
-                return;
-            }
-
-            String nombreUsuario = usuario.getUsername() != null && !usuario.getUsername().trim().isEmpty()
-                    ? usuario.getUsername().trim()
-                    : usuario.getCorreo().trim();
-
-            String token = "QR-" + java.util.UUID.randomUUID();
-
-            Inscripcion inscripcion = new Inscripcion(
-                    evento,
-                    nombreUsuario,
-                    usuario.getCorreo().trim().toLowerCase(),
-                    token
-            );
-
+            try { fechaEvento = java.time.LocalDate.parse(evento.getFecha()); }
+            catch (Exception e) { session.getTransaction().rollback(); ctx.status(500).json(Map.of("ok", false, "mensaje", "La fecha del evento no tiene un formato válido")); return; }
+            if (fechaEvento.isBefore(java.time.LocalDate.now())) { session.getTransaction().rollback(); ctx.status(400).json(Map.of("ok", false, "mensaje", "No puedes inscribirte en un evento cuya fecha ya pasó")); return; }
+            if (evento.getInscritos() >= evento.getCupoMaximo()) { session.getTransaction().rollback(); ctx.status(400).json(Map.of("ok", false, "mensaje", "El evento ya no tiene cupo disponible")); return; }
+            Inscripcion yaExiste = session.createQuery("FROM Inscripcion WHERE evento.id = :eventoId AND correo = :correo", Inscripcion.class)
+                    .setParameter("eventoId", evento.getId()).setParameter("correo", usuario.getCorreo().trim().toLowerCase()).uniqueResult();
+            if (yaExiste != null) { session.getTransaction().rollback(); ctx.status(400).json(Map.of("ok", false, "mensaje", "Ya estás inscrito en este evento")); return; }
+            String nombreUsuario = usuario.getUsername() != null && !usuario.getUsername().trim().isEmpty() ? usuario.getUsername().trim() : usuario.getCorreo().trim();
+            String token = "EVT-" + evento.getId() + "-USR-" + usuario.getId() + "-" + java.util.UUID.randomUUID();
+            Inscripcion inscripcion = new Inscripcion(evento, nombreUsuario, usuario.getCorreo().trim().toLowerCase(), token);
             session.persist(inscripcion);
-
             evento.setInscritos(evento.getInscritos() + 1);
             session.merge(evento);
-
             session.getTransaction().commit();
-
-            ctx.json(Map.of(
-                    "ok", true,
-                    "mensaje", "Inscripción realizada correctamente",
-                    "eventoId", evento.getId(),
-                    "inscritos", evento.getInscritos(),
-                    "usuarioId", usuario.getId(),
-                    "correo", inscripcion.getCorreo(),
-                    "token", inscripcion.getTokenQr()
-            ));
-
+            ctx.json(Map.of("ok", true, "mensaje", "Inscripción realizada correctamente", "eventoId", evento.getId(), "inscritos", evento.getInscritos(), "usuarioId", usuario.getId(), "correo", inscripcion.getCorreo(), "token", inscripcion.getTokenQr()));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of(
-                    "ok", false,
-                    "mensaje", "Error guardando la inscripción: " + e.getMessage()
-            ));
+            ctx.status(500).json(Map.of("ok", false, "mensaje", "Error guardando la inscripción: " + e.getMessage()));
         }
     }
 
-    // Procesa el escaneo del código QR
     private static void procesarAsistencia(Context ctx) {
         Usuario usuario = ctx.sessionAttribute("usuarioActual");
-
         if (usuario == null || usuario.getRol().equals("PARTICIPANTE")) {
-            ctx.status(403).json(Map.of(
-                    "ok", false,
-                    "mensaje", "No tienes permiso para registrar asistencia"
-            ));
+            ctx.status(403).json(Map.of("ok", false, "mensaje", "No tienes permiso para registrar asistencia"));
             return;
         }
-
         Map body = ctx.bodyAsClass(Map.class);
         String token = (String) body.get("token");
-
-        if (token == null || token.trim().isEmpty()) {
-            ctx.status(400).json(Map.of(
-                    "ok", false,
-                    "mensaje", "Token inválido"
-            ));
-            return;
-        }
-
+        if (token == null || token.trim().isEmpty()) { ctx.status(400).json(Map.of("ok", false, "mensaje", "Token inválido")); return; }
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             session.beginTransaction();
-
-            Inscripcion inscripcion = session.createQuery(
-                            "FROM Inscripcion WHERE tokenQr = :token",
-                            Inscripcion.class
-                    )
-                    .setParameter("token", token)
-                    .uniqueResult();
-
-            if (inscripcion == null) {
-                ctx.json(Map.of(
-                        "ok", false,
-                        "mensaje", "Código QR no reconocido."
-                ));
-                return;
-            }
-
-            if (inscripcion.isAsistio()) {
-                ctx.json(Map.of(
-                        "ok", false,
-                        "mensaje", "Este QR ya fue escaneado anteriormente."
-                ));
-                return;
-            }
-
+            Inscripcion inscripcion = session.createQuery("FROM Inscripcion WHERE tokenQr = :token", Inscripcion.class).setParameter("token", token).uniqueResult();
+            if (inscripcion == null) { ctx.json(Map.of("ok", false, "mensaje", "Código QR no reconocido.")); return; }
+            if (inscripcion.isAsistio()) { ctx.json(Map.of("ok", false, "mensaje", "Este QR ya fue escaneado anteriormente.")); return; }
             inscripcion.setAsistio(true);
             inscripcion.setFechaAsistencia(java.time.LocalDateTime.now());
-
             session.merge(inscripcion);
             session.getTransaction().commit();
-
-            ctx.json(Map.of(
-                    "ok", true,
-                    "mensaje", "Asistencia registrada para: " + inscripcion.getNombre()
-            ));
+            ctx.json(Map.of("ok", true, "mensaje", "Asistencia registrada para: " + inscripcion.getNombre()));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of(
-                    "ok", false,
-                    "mensaje", "Error en BD: " + e.getMessage()
-            ));
+            ctx.status(500).json(Map.of("ok", false, "mensaje", "Error en BD: " + e.getMessage()));
         }
     }
 
-    // Elimina una inscripción si el estudiante cancela
     private static void cancelarInscripcion(Context ctx) {
-
         Usuario usuario = ctx.sessionAttribute("usuarioActual");
-
-        if (usuario == null) {
-            ctx.status(401).json(Map.of(
-                    "ok", false,
-                    "mensaje", "Debes iniciar sesión"
-            ));
-            return;
-        }
-
+        if (usuario == null) { ctx.status(401).json(Map.of("ok", false, "mensaje", "Debes iniciar sesión")); return; }
         Long idEvento = Long.valueOf(ctx.pathParam("id"));
-
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
-
             session.beginTransaction();
-
-            Inscripcion inscripcion = session.createQuery(
-                            "FROM Inscripcion WHERE evento.id = :eventoId AND correo = :correo",
-                            Inscripcion.class
-                    )
-                    .setParameter("eventoId", idEvento)
-                    .setParameter("correo", usuario.getCorreo().trim().toLowerCase())
-                    .uniqueResult();
-
-            if (inscripcion == null) {
-                session.getTransaction().rollback();
-                ctx.json(Map.of(
-                        "ok", false,
-                        "mensaje", "No estás inscrito en este evento"
-                ));
-                return;
-            }
-
+            Inscripcion inscripcion = session.createQuery("FROM Inscripcion WHERE evento.id = :eventoId AND correo = :correo", Inscripcion.class)
+                    .setParameter("eventoId", idEvento).setParameter("correo", usuario.getCorreo().trim().toLowerCase()).uniqueResult();
+            if (inscripcion == null) { session.getTransaction().rollback(); ctx.json(Map.of("ok", false, "mensaje", "No estás inscrito en este evento")); return; }
             Evento evento = inscripcion.getEvento();
-
             java.time.LocalDate fechaEvento;
-            try {
-                fechaEvento = java.time.LocalDate.parse(evento.getFecha());
-            } catch (Exception e) {
-                session.getTransaction().rollback();
-                ctx.status(500).json(Map.of(
-                        "ok", false,
-                        "mensaje", "La fecha del evento no tiene un formato válido"
-                ));
-                return;
-            }
-
-            java.time.LocalDate hoy = java.time.LocalDate.now();
-
-            if (!fechaEvento.isAfter(hoy)) {
-                session.getTransaction().rollback();
-                ctx.status(400).json(Map.of(
-                        "ok", false,
-                        "mensaje", "No puedes cancelar la inscripción el día del evento ni después de la fecha"
-                ));
-                return;
-            }
-
+            try { fechaEvento = java.time.LocalDate.parse(evento.getFecha()); }
+            catch (Exception e) { session.getTransaction().rollback(); ctx.status(500).json(Map.of("ok", false, "mensaje", "La fecha del evento no tiene un formato válido")); return; }
+            if (!fechaEvento.isAfter(java.time.LocalDate.now())) { session.getTransaction().rollback(); ctx.status(400).json(Map.of("ok", false, "mensaje", "No puedes cancelar la inscripción el día del evento ni después de la fecha")); return; }
             evento.setInscritos(Math.max(0, evento.getInscritos() - 1));
-
             session.merge(evento);
             session.remove(inscripcion);
-
             session.getTransaction().commit();
-
-            ctx.json(Map.of(
-                    "ok", true,
-                    "mensaje", "Inscripción cancelada",
-                    "eventoId", evento.getId(),
-                    "inscritos", evento.getInscritos()
-            ));
-
+            ctx.json(Map.of("ok", true, "mensaje", "Inscripción cancelada", "eventoId", evento.getId(), "inscritos", evento.getInscritos()));
         } catch (Exception e) {
-            ctx.status(500).json(Map.of(
-                    "ok", false,
-                    "mensaje", "Error cancelando inscripción: " + e.getMessage()
-            ));
+            ctx.status(500).json(Map.of("ok", false, "mensaje", "Error cancelando inscripción: " + e.getMessage()));
         }
     }
 
-    // Devuelve los datos JSON para Chart.js o Google Charts
     private static void obtenerEstadisticas(Context ctx) {
         Long idEvento = Long.valueOf(ctx.pathParam("id"));
-
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             Evento evento = session.get(Evento.class, idEvento);
-
-            if (evento == null) {
-                ctx.status(404).json(Map.of(
-                        "ok", false,
-                        "mensaje", "Evento no encontrado."
-                ));
-                return;
-            }
-
-            List<Inscripcion> inscripciones = session.createQuery(
-                            "FROM Inscripcion i WHERE i.evento.id = :eventoId",
-                            Inscripcion.class
-                    )
-                    .setParameter("eventoId", idEvento)
-                    .list();
-
+            if (evento == null) { ctx.status(404).json(Map.of("ok", false, "mensaje", "Evento no encontrado.")); return; }
+            List<Inscripcion> inscripciones = session.createQuery("FROM Inscripcion i WHERE i.evento.id = :eventoId", Inscripcion.class).setParameter("eventoId", idEvento).list();
             int totalInscritos = inscripciones.size();
-
-            long totalAsistentes = inscripciones.stream()
-                    .filter(Inscripcion::isAsistio)
-                    .count();
-
-            double porcentaje = (totalInscritos > 0)
-                    ? ((double) totalAsistentes / totalInscritos) * 100
-                    : 0.0;
-
-            // Inscripciones por día
+            long totalAsistentes = inscripciones.stream().filter(Inscripcion::isAsistio).count();
+            double porcentaje = (totalInscritos > 0) ? ((double) totalAsistentes / totalInscritos) * 100 : 0.0;
             java.util.Map<String, Integer> inscripcionesPorDiaMap = new java.util.TreeMap<>();
-
             for (Inscripcion i : inscripciones) {
                 if (i.getFechaInscripcion() != null) {
                     String dia = i.getFechaInscripcion().toLocalDate().toString();
-                    inscripcionesPorDiaMap.put(
-                            dia,
-                            inscripcionesPorDiaMap.getOrDefault(dia, 0) + 1
-                    );
+                    inscripcionesPorDiaMap.put(dia, inscripcionesPorDiaMap.getOrDefault(dia, 0) + 1);
                 }
             }
-
-            List<String> labelsInscripciones = new java.util.ArrayList<>();
-            List<Integer> dataInscripciones = new java.util.ArrayList<>();
-
-            for (Map.Entry<String, Integer> entry : inscripcionesPorDiaMap.entrySet()) {
-                labelsInscripciones.add(entry.getKey());
-                dataInscripciones.add(entry.getValue());
-            }
-
-            // Asistencia por hora
             java.util.Map<String, Integer> asistenciaPorHoraMap = new java.util.TreeMap<>();
-
             for (Inscripcion i : inscripciones) {
                 if (i.isAsistio() && i.getFechaAsistencia() != null) {
                     String hora = String.format("%02d:00", i.getFechaAsistencia().getHour());
-                    asistenciaPorHoraMap.put(
-                            hora,
-                            asistenciaPorHoraMap.getOrDefault(hora, 0) + 1
-                    );
+                    asistenciaPorHoraMap.put(hora, asistenciaPorHoraMap.getOrDefault(hora, 0) + 1);
                 }
             }
-
-            List<String> labelsAsistencia = new java.util.ArrayList<>();
-            List<Integer> dataAsistencia = new java.util.ArrayList<>();
-
-            for (Map.Entry<String, Integer> entry : asistenciaPorHoraMap.entrySet()) {
-                labelsAsistencia.add(entry.getKey());
-                dataAsistencia.add(entry.getValue());
-            }
-
             Map<String, Object> respuesta = new HashMap<>();
             respuesta.put("ok", true);
             respuesta.put("evento", evento.getTitulo());
             respuesta.put("totalInscritos", totalInscritos);
             respuesta.put("totalAsistentes", totalAsistentes);
             respuesta.put("porcentajeAsistencia", String.format("%.2f%%", porcentaje));
-
-            respuesta.put("inscripcionesPorDia", Map.of(
-                    "labels", labelsInscripciones,
-                    "data", dataInscripciones
-            ));
-
-            respuesta.put("asistenciaPorHora", Map.of(
-                    "labels", labelsAsistencia,
-                    "data", dataAsistencia
-            ));
-
+            respuesta.put("inscripcionesPorDia", Map.of("labels", new java.util.ArrayList<>(inscripcionesPorDiaMap.keySet()), "data", new java.util.ArrayList<>(inscripcionesPorDiaMap.values())));
+            respuesta.put("asistenciaPorHora",   Map.of("labels", new java.util.ArrayList<>(asistenciaPorHoraMap.keySet()),   "data", new java.util.ArrayList<>(asistenciaPorHoraMap.values())));
             ctx.json(respuesta);
-
         } catch (Exception e) {
-            ctx.status(500).json(Map.of(
-                    "ok", false,
-                    "mensaje", "Error: " + e.getMessage()
-            ));
+            ctx.status(500).json(Map.of("ok", false, "mensaje", "Error: " + e.getMessage()));
         }
     }
 
@@ -841,7 +509,6 @@ public class Main {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             session.beginTransaction();
             Long totalAdmins = session.createQuery("SELECT COUNT(u) FROM Usuario u WHERE u.rol = 'ADMINISTRADOR'", Long.class).uniqueResult();
-
             if (totalAdmins == 0) {
                 Usuario admin = new Usuario("admin@pucmm.edu.do", "admin", "admin123", "ADMINISTRADOR");
                 session.persist(admin);
@@ -856,51 +523,17 @@ public class Main {
     private static void crearEventosPrueba() {
         try (Session session = HibernateUtil.getSessionFactory().openSession()) {
             session.beginTransaction();
-
             Long totalEventos = session.createQuery("SELECT COUNT(e) FROM Evento e", Long.class).uniqueResult();
-
             if (totalEventos == 0) {
-                Evento e1 = new Evento();
-                e1.setTitulo("Charla de Java Web");
-                e1.setDescripcion("Introducción a Javalin y Thymeleaf");
-                e1.setFecha("2026-03-20");
-                e1.setLugar("Auditorio 1");
-                e1.setCupoMaximo(50);
-                e1.setInscritos(20);
-                e1.setPublicado(true);
-
-                Evento e2 = new Evento();
-                e2.setTitulo("Taller de Docker");
-                e2.setDescripcion("Contenedores y despliegue básico");
-                e2.setFecha("2026-03-22");
-                e2.setLugar("Laboratorio 3");
-                e2.setCupoMaximo(30);
-                e2.setInscritos(30);
-                e2.setPublicado(true);
-
-                Evento e3 = new Evento();
-                e3.setTitulo("Conferencia de IA");
-                e3.setDescripcion("Aplicaciones prácticas de inteligencia artificial");
-                e3.setFecha("2026-03-25");
-                e3.setLugar("Salón A-12");
-                e3.setCupoMaximo(100);
-                e3.setInscritos(65);
-                e3.setPublicado(true);
-
-                session.persist(e1);
-                session.persist(e2);
-                session.persist(e3);
-
+                Evento e1 = new Evento(); e1.setTitulo("Charla de Java Web"); e1.setDescripcion("Introducción a Javalin y Thymeleaf"); e1.setFecha("2026-04-20"); e1.setLugar("Auditorio 1"); e1.setCupoMaximo(50); e1.setInscritos(20); e1.setPublicado(true);
+                Evento e2 = new Evento(); e2.setTitulo("Taller de Docker"); e2.setDescripcion("Contenedores y despliegue básico"); e2.setFecha("2026-04-22"); e2.setLugar("Laboratorio 3"); e2.setCupoMaximo(30); e2.setInscritos(10); e2.setPublicado(true);
+                Evento e3 = new Evento(); e3.setTitulo("Conferencia de IA"); e3.setDescripcion("Aplicaciones prácticas de inteligencia artificial"); e3.setFecha("2026-04-25"); e3.setLugar("Salón A-12"); e3.setCupoMaximo(100); e3.setInscritos(65); e3.setPublicado(true);
+                session.persist(e1); session.persist(e2); session.persist(e3);
                 System.out.println("✅ Eventos de prueba creados automáticamente.");
             }
-
             session.getTransaction().commit();
         } catch (Exception e) {
             System.err.println("Error creando eventos de prueba: " + e.getMessage());
         }
     }
 }
-
-
-
-
